@@ -16,7 +16,7 @@
         "http://*/html-report/*",
         "https://*/html-report/*"
       ],
-      "js": ["xlsx.min.js", "content.js"],
+      "js": ["xlsx.min.js", "content.js", "ui.js", "form.js", "excel.js"],
       "css": ["panel.css"],
       "run_at": "document_idle",
       "all_frames": false
