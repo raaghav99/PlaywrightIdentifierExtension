@@ -1,10 +1,10 @@
-/** Playwright Test Identifier - UI Module v3.0
+/** Playwright Test Identifier - UI Module v4.0
  * Panel HTML injection, layout, drag/resize, minimize, toast.
- * Depends on: state, esc() from content.js */
+ * Depends on: state, esc(), todayDDMM() from content.js */
 
-/* ══════════════════════════════════════════
+/* ======================================================
    PANEL HTML
-   ══════════════════════════════════════════ */
+   ====================================================== */
 function injectPanel() {
   var panel = document.createElement("div");
   panel.id = "pw-ext-panel";
@@ -39,7 +39,22 @@ function injectPanel() {
   h.push('<div class="pw-field"><label>SC</label><input id="pw-sc" readonly placeholder="(click a test)" /></div>');
   h.push('<div class="pw-field"><label>Name</label><input id="pw-name" readonly placeholder="..." /></div>');
   h.push('<div class="pw-field"><label>Result</label><span id="pw-result-badge" class="pw-result-display"></span><input id="pw-result" type="hidden" /></div>');
-  h.push('<div class="pw-field pw-field-input"><label>Label</label><input id="pw-label" placeholder="e.g. Login timeout issue" autocomplete="off" /><div id="pw-suggest-label" class="pw-autocomplete-list"></div></div>');
+
+  /* Date picker */
+  h.push('<div class="pw-field pw-date-row">');
+  h.push('<label>Date</label>');
+  h.push('<input id="pw-date-picker" type="text" value="' + todayDDMM() + '" placeholder="DD/MM" maxlength="5" />');
+  h.push('<label class="pw-all-dates-label"><input type="checkbox" id="pw-all-dates" /> All dates</label>');
+  h.push('</div>');
+
+  /* Label + Copy from */
+  h.push('<div class="pw-field pw-field-input">');
+  h.push('<div class="pw-label-header"><label>Label</label><button id="pw-copy-from-btn" class="pw-copy-from-trigger" type="button">Copy from\u2026</button></div>');
+  h.push('<input id="pw-label" placeholder="e.g. Login timeout issue" autocomplete="off" />');
+  h.push('<div id="pw-suggest-label" class="pw-autocomplete-list"></div>');
+  h.push('<div id="pw-copy-from-dropdown" class="pw-copy-from-dropdown" style="display:none"></div>');
+  h.push('</div>');
+
   h.push('<div class="pw-field pw-field-input"><label>Category</label><input id="pw-category" placeholder="e.g. Functional Bug" autocomplete="off" /><div id="pw-suggest-category" class="pw-autocomplete-list"></div></div>');
   h.push('<div class="pw-field pw-field-input"><label>Owner</label><input id="pw-owner" placeholder="e.g. Frontend Team" autocomplete="off" /><div id="pw-suggest-owner" class="pw-autocomplete-list"></div></div>');
   h.push('<div class="pw-field pw-field-input"><label>Jira</label><input id="pw-jira" placeholder="e.g. PROJ-123" autocomplete="off" /><div id="pw-suggest-jira" class="pw-autocomplete-list"></div></div>');
@@ -56,6 +71,7 @@ function injectPanel() {
   h.push('<div id="pw-footer">');
   h.push('<button id="pw-toggle-list-btn">View Saved (0)</button>');
   h.push('<button id="pw-download-btn">Download Excel</button>');
+  h.push('<button id="pw-delete-all-btn" class="pw-footer-btn-danger" title="Delete All Data">&#128465;</button>');
   h.push('</div>');
 
   /* Resize handle */
@@ -69,9 +85,9 @@ function injectPanel() {
   document.body.appendChild(toast);
 }
 
-/* ══════════════════════════════════════════
+/* ======================================================
    POSITION & LAYOUT
-   ══════════════════════════════════════════ */
+   ====================================================== */
 function applyPanelPosition() {
   var panel  = document.getElementById("pw-ext-panel");
   var handle = document.getElementById("pw-resize-handle");
@@ -118,9 +134,9 @@ function toggleForm() {
   }
 }
 
-/* ══════════════════════════════════════════
+/* ======================================================
    DRAG & RESIZE
-   ══════════════════════════════════════════ */
+   ====================================================== */
 function setupDragResize() {
   var handle = document.getElementById("pw-resize-handle");
   handle.addEventListener("mousedown", function (e) {
@@ -141,9 +157,9 @@ function setupDragResize() {
   });
 }
 
-/* ══════════════════════════════════════════
+/* ======================================================
    TOAST
-   ══════════════════════════════════════════ */
+   ====================================================== */
 var toastTimer = null;
 function showToast(msg, type) {
   var toast = document.getElementById("pw-toast");

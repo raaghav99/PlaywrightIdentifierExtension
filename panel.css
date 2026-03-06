@@ -1,5 +1,5 @@
 /* =========================================================
-   Playwright Test Identifier v3.0 — Panel Styles
+   Playwright Test Identifier v4.0 — Panel Styles
    ========================================================= */
 
 #pw-ext-panel {
@@ -222,6 +222,92 @@
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
 }
 
+/* ---------- Date picker row ---------- */
+.pw-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pw-date-row label:first-child {
+  width: 100%;
+}
+.pw-date-row input[type="text"] {
+  width: 70px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 6px;
+}
+.pw-all-dates-label {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pw-all-dates-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* ---------- Label header with Copy-from ---------- */
+.pw-label-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.pw-label-header label {
+  margin-bottom: 0;
+}
+.pw-copy-from-trigger {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+.pw-copy-from-trigger:hover {
+  background: #eff6ff;
+}
+
+/* Copy-from dropdown */
+.pw-copy-from-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 11;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+.pw-copy-option {
+  padding: 7px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.1s;
+}
+.pw-copy-option:hover { background: #f0fdf4; }
+.pw-copy-option:last-child { border-bottom: none; }
+
 /* Result badge */
 .pw-result-display {
   display: inline-block;
@@ -426,7 +512,7 @@
 /* ---------- Footer ---------- */
 #pw-footer {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid #e5e7eb;
   flex-shrink: 0;
@@ -466,6 +552,26 @@
 #pw-download-btn:hover {
   background: #15803d;
   border-color: #15803d;
+}
+
+/* Delete All button */
+.pw-footer-btn-danger {
+  width: 34px;
+  flex-shrink: 0;
+  padding: 6px 0;
+  font-size: 14px;
+  background: #fff;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: center;
+  line-height: 1;
+}
+.pw-footer-btn-danger:hover {
+  background: #fef2f2;
+  border-color: #dc2626;
 }
 
 /* ---------- Toast ---------- */
