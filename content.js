@@ -161,6 +161,19 @@ if (isPlaywrightReport()) {
     return { sc: sc, name: name, result: result, testId: testId };
   }
 
+  /* ── Status bar update ── */
+  function updateStatusBar(scraped, labeled, ok) {
+    var el = document.getElementById("pw-status-text");
+    if (!el) return;
+    if (!ok && scraped === 0) {
+      el.textContent = "\u26a0 No tests scraped \u2014 try manual Scrape";
+      el.parentElement.className = "pw-status-warn";
+    } else {
+      el.textContent = "\u2713 " + scraped + " tests scraped" + (labeled ? " \u00b7 " + labeled + " labeled" : "");
+      el.parentElement.className = "pw-status-ok";
+    }
+  }
+
   /* ── Panel state ── */
   var state = {
     side:       "right",
@@ -240,9 +253,15 @@ if (isPlaywrightReport()) {
       if (report.scraped && report.scraped.length) {
         /* Existing report: touch lastAccessed, skip scrape */
         saveReport(report);
+        updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
       } else {
         /* New report: scrape */
-        scrapeAllTests();
+        updateStatusBar(0, 0, false);
+        scrapeAllTests(function (count) {
+          getReport(function (r) {
+            updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+          });
+        });
       }
     });
   }

@@ -29,6 +29,9 @@ function attachListeners() {
       btn.disabled  = false;
       dlBtn.disabled = false;
       refreshCount();
+      getReport(function (r) {
+        updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+      });
       showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
     });
   });
@@ -398,6 +401,7 @@ function saveEntry() {
       state.editingKey = null;
       document.getElementById("pw-save-btn").textContent              = "Save Entry";
       document.getElementById("pw-delete-current-btn").style.display = "none";
+      updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
       showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
     });
   });

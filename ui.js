@@ -24,6 +24,9 @@ function injectPanel() {
   h.push('<span>Test Identifier</span>');
   h.push('</div>');
 
+  /* Status bar */
+  h.push('<div id="pw-status-bar"><span id="pw-status-text">Loading\u2026</span></div>');
+
   /* Form */
   h.push('<div id="pw-form-section">');
   h.push('<div class="pw-field"><label>SC</label><input id="pw-sc" readonly placeholder="(click a test)" /></div>');
