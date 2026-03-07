@@ -53,6 +53,7 @@ function injectPanel() {
   h.push('<input id="pw-label" placeholder="e.g. Login timeout issue" autocomplete="off" />');
   h.push('<div id="pw-suggest-label" class="pw-autocomplete-list"></div>');
   h.push('<div id="pw-copy-from-dropdown" class="pw-copy-from-dropdown" style="display:none"></div>');
+  h.push('<div id="pw-label-chips"></div>');
   h.push('</div>');
 
   h.push('<div class="pw-field pw-field-input"><label>Category</label><input id="pw-category" placeholder="e.g. Functional Bug" autocomplete="off" /><div id="pw-suggest-category" class="pw-autocomplete-list"></div></div>');
@@ -69,6 +70,8 @@ function injectPanel() {
 
   /* Footer */
   h.push('<div id="pw-footer">');
+  h.push('<button id="pw-scrape-btn" title="Re-scrape tests">&#8635; Scrape</button>');
+  h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
   h.push('<button id="pw-toggle-list-btn">View Saved (0)</button>');
   h.push('<button id="pw-download-btn">Download Excel</button>');
   h.push('<button id="pw-delete-all-btn" class="pw-footer-btn-danger" title="Delete All Data">&#128465;</button>');

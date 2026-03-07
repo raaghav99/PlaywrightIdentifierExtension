@@ -19,9 +19,9 @@ if (isPlaywrightReport()) {
 
   /* ── Icon -> Status mapping ── */
   var ICON_STATUS = {
-    "color-icon-success": "PASSED",
-    "color-icon-danger":  "FAILED",
-    "color-icon-warning": "FLAKY",
+    "color-icon-success": "PASS",
+    "color-icon-danger":  "FAIL",
+    "color-icon-warning": "PASS",
     "color-icon-subtle":  "SKIPPED"
   };
 
@@ -89,9 +89,9 @@ if (isPlaywrightReport()) {
     if (result === "UNKNOWN") {
       var classes = Array.from(row.classList);
       for (var i = 0; i < classes.length; i++) {
-        if (classes[i] === "test-file-test-outcome-expected")   { result = "PASSED";  break; }
-        if (classes[i] === "test-file-test-outcome-unexpected") { result = "FAILED";  break; }
-        if (classes[i] === "test-file-test-outcome-flaky")      { result = "FLAKY";   break; }
+        if (classes[i] === "test-file-test-outcome-expected")   { result = "PASS";    break; }
+        if (classes[i] === "test-file-test-outcome-unexpected") { result = "FAIL";    break; }
+        if (classes[i] === "test-file-test-outcome-flaky")      { result = "PASS";    break; }
         if (classes[i] === "test-file-test-outcome-skipped")    { result = "SKIPPED"; break; }
       }
     }
@@ -111,7 +111,15 @@ if (isPlaywrightReport()) {
     rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
     var name = normalizeName(rawName);
 
-    return { sc: sc, name: name, result: result };
+    /* testId from anchor href */
+    var testId = "";
+    var anchor = row.querySelector('a[href*="testId="]');
+    if (anchor) {
+      var hrefMatch = (anchor.getAttribute("href") || "").match(/testId=([^&]+)/);
+      if (hrefMatch) testId = decodeURIComponent(hrefMatch[1]);
+    }
+
+    return { sc: sc, name: name, result: result, testId: testId };
   }
 
   /* ── Panel state (shared across modules) ── */
@@ -123,48 +131,43 @@ if (isPlaywrightReport()) {
     editingId:    null,
     lastUrl:      location.href,
     selectedDate: todayDDMM(),
-    allDates:     false
+    allDates:     false,
+    scraping:     false
   };
 
   /* ── Auto-scrape all tests on page ── */
-  function scrapeAllTests() {
+  function scrapeAllTests(cb) {
+    if (state.scraping) return;
+    state.scraping = true;
+
     var rows = document.querySelectorAll(".test-file-test");
-    if (!rows.length) return;
+    if (!rows.length) {
+      state.scraping = false;
+      if (cb) cb(0);
+      return;
+    }
 
     var scraped = [];
-    rows.forEach(function (row) {
+    rows.forEach(function (row, idx) {
       var data = extractRowData(row);
-      var id = data.sc + "|" + data.name;
+      /* Use testId as unique key; fall back to index-based key */
+      var id = data.testId || (data.sc + "|" + data.name + "|" + idx);
       scraped.push({
-        id:        id,
-        sc:        data.sc,
-        name:      data.name,
-        result:    data.result,
-        label:     "",
-        category:  "",
-        owner:     "",
-        jira:      "",
-        timestamp: null
+        id:     id,
+        sc:     data.sc,
+        name:   data.name,
+        result: data.result,
+        testId: data.testId
       });
     });
 
-    /* Upsert into pw_scraped: only overwrite result, never overwrite user-filled fields */
-    chrome.storage.local.get(["pw_scraped"], function (store) {
-      var existing = store.pw_scraped || [];
-      var map = {};
-      existing.forEach(function (e) { map[e.id] = e; });
-
-      scraped.forEach(function (s) {
-        if (map[s.id]) {
-          /* Only update result */
-          map[s.id].result = s.result;
-        } else {
-          map[s.id] = s;
-        }
-      });
-
-      var merged = Object.values(map);
-      chrome.storage.local.set({ pw_scraped: merged });
+    /* Replace pw_scraped entirely each scrape to get accurate count */
+    chrome.storage.local.set({ pw_scraped: scraped }, function () {
+      if (chrome.runtime.lastError) {
+        console.error("pw-ext: scrape save failed –", chrome.runtime.lastError.message);
+      }
+      state.scraping = false;
+      if (cb) cb(scraped.length);
     });
   }
 
@@ -181,13 +184,18 @@ if (isPlaywrightReport()) {
 
   function init() {
     if (document.getElementById("pw-ext-panel")) return;
+    state.selectedDate = todayDDMM();
     injectPanel();          /* ui.js */
     applyPanelPosition();   /* ui.js */
+    /* Update date picker to current day */
+    var dp = document.getElementById("pw-date-picker");
+    if (dp) dp.value = state.selectedDate;
     attachListeners();      /* form.js */
     listenForTestClicks();  /* form.js */
     setupDragResize();      /* ui.js */
     setupUrlWatcher();      /* form.js */
     refreshCount();         /* form.js */
+    renderLabelChips();     /* form.js */
     scrapeAllTests();       /* auto-scrape */
   }
 

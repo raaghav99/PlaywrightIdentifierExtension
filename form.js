@@ -12,6 +12,20 @@ function attachListeners() {
   document.getElementById("pw-save-btn").addEventListener("click", saveEntry);
   document.getElementById("pw-toggle-list-btn").addEventListener("click", toggleList);
   document.getElementById("pw-download-btn").addEventListener("click", downloadExcel);  /* excel.js */
+  document.getElementById("pw-scrape-btn").addEventListener("click", function () {
+    var btn      = document.getElementById("pw-scrape-btn");
+    var spinner  = document.getElementById("pw-scrape-spinner");
+    var dlBtn    = document.getElementById("pw-download-btn");
+    btn.disabled = true;
+    dlBtn.disabled = true;
+    spinner.style.display = "inline-block";
+    scrapeAllTests(function (count) {
+      spinner.style.display = "none";
+      btn.disabled  = false;
+      dlBtn.disabled = false;
+      showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
+    });
+  });
   document.getElementById("pw-dock-left").addEventListener("click", function () {
     state.side = "left"; applyPanelPosition();
   });
@@ -79,6 +93,11 @@ function attachListeners() {
 
   /* Copy-from button */
   document.getElementById("pw-copy-from-btn").addEventListener("click", toggleCopyFromDropdown);
+
+  /* Prevent keystrokes inside panel from reaching Playwright's scroll handlers */
+  var panel = document.getElementById("pw-ext-panel");
+  panel.addEventListener("keydown", function (e) { e.stopPropagation(); }, true);
+  panel.addEventListener("keypress", function (e) { e.stopPropagation(); }, true);
 
   /* Autocomplete for fields */
   ["label", "category", "owner", "jira"].forEach(function (field) {
@@ -476,6 +495,7 @@ function saveEntry() {
 
     chrome.storage.local.set({ pw_entries: entries, pw_label_history: history }, function () {
       refreshCount(entries.length);
+      renderLabelChips();
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(entries);
       ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
         document.getElementById(id).value = "";
@@ -572,6 +592,47 @@ function deleteEntry(idx) {
       refreshCount(entries.length);
       renderList(entries);
       showToast("Entry deleted", "warning");
+    });
+  });
+}
+
+/* ======================================================
+   LABEL CHIPS (independent label library)
+   ====================================================== */
+function renderLabelChips() {
+  var container = document.getElementById("pw-label-chips");
+  if (!container) return;
+  chrome.storage.local.get(["pw_label_history"], function (data) {
+    var history = (data.pw_label_history || []).sort(function (a, b) {
+      var da = new Date(a.lastUsed || 0).getTime();
+      var db = new Date(b.lastUsed || 0).getTime();
+      return db - da;
+    });
+    var top = history.slice(0, 3);
+    if (!top.length) { container.innerHTML = ""; return; }
+    container.innerHTML = top.map(function (h) {
+      return '<span class="pw-label-chip" data-val="' + esc(h.text) + '">' +
+        esc(h.text) +
+        '<button class="pw-label-chip-remove" data-val="' + esc(h.text) + '" title="Remove">\u00d7</button>' +
+        '</span>';
+    }).join("");
+
+    container.querySelectorAll(".pw-label-chip").forEach(function (chip) {
+      chip.addEventListener("click", function (e) {
+        if (e.target.classList.contains("pw-label-chip-remove")) return;
+        document.getElementById("pw-label").value = chip.dataset.val;
+        document.getElementById("pw-label").focus();
+      });
+    });
+    container.querySelectorAll(".pw-label-chip-remove").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var val = btn.dataset.val;
+        chrome.storage.local.get(["pw_label_history"], function (d) {
+          var updated = (d.pw_label_history || []).filter(function (h) { return h.text !== val; });
+          chrome.storage.local.set({ pw_label_history: updated }, renderLabelChips);
+        });
+      });
     });
   });
 }

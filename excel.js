@@ -20,45 +20,47 @@ function downloadExcel() {
     var entries = data.pw_entries || [];
     var scraped = data.pw_scraped || [];
 
-    /* Build merged list: scraped as base, entries patch in labels */
-    var labelledMap = {};
-    entries.forEach(function (e) {
-      var key = e.sc + "|" + e.name;
-      if (!labelledMap[key]) labelledMap[key] = [];
-      labelledMap[key].push(e);
-    });
-
     /* Date filter for labelled entries */
     var dateFilter = null;
     if (!state.allDates && state.selectedDate) {
       dateFilter = state.selectedDate + ":";
     }
 
+    /* Build labelled map keyed by sc|name, pre-filtered by date.
+       Scoped to the current scrape so entries from other reports are excluded. */
+    var labelledMap = {};
+    entries.forEach(function (e) {
+      if (dateFilter && (e.label || "").indexOf(dateFilter) !== 0) return;
+      var key = e.sc + "|" + e.name;
+      if (!labelledMap[key]) labelledMap[key] = [];
+      labelledMap[key].push(e);
+    });
+
     var allRows = [];
     var labelledCount = 0;
 
-    /* First: add all labelled entries (possibly date-filtered) */
-    var usedKeys = {};
-    entries.forEach(function (e) {
-      if (dateFilter && (e.label || "").indexOf(dateFilter) !== 0) return;
-      allRows.push(e);
-      labelledCount++;
-      usedKeys[e.sc + "|" + e.name] = true;
-    });
-
-    /* Second: add scraped rows that have no labelled entry */
+    /* Use scraped as the authoritative test list so only tests from the
+       current report appear. Enrich each row with its label(s) if saved. */
     scraped.forEach(function (s) {
-      if (usedKeys[s.id]) return;
-      allRows.push({
-        sc:        s.sc,
-        name:      s.name,
-        result:    s.result,
-        label:     "",
-        category:  "",
-        owner:     "",
-        jira:      "",
-        timestamp: null
-      });
+      var key = s.sc + "|" + s.name;
+      var matches = labelledMap[key];
+      if (matches && matches.length) {
+        matches.forEach(function (e) {
+          allRows.push(e);
+          labelledCount++;
+        });
+      } else {
+        allRows.push({
+          sc:        s.sc,
+          name:      s.name,
+          result:    s.result,
+          label:     "",
+          category:  "",
+          owner:     "",
+          jira:      "",
+          timestamp: null
+        });
+      }
     });
 
     if (!allRows.length) {
@@ -151,17 +153,18 @@ function downloadExcel() {
       var cell    = wsDetails[cellRef];
       if (!cell) continue;
       var val = (cell.v || "").toUpperCase();
-      if (val === "PASSED") {
+      if (val === "PASS" || val === "PASSED") {
         cell.s = { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "166534" }, bold: true }, alignment: { horizontal: "center" } };
-      } else if (val === "FAILED") {
+      } else if (val === "FAIL" || val === "FAILED") {
         cell.s = { fill: { fgColor: { rgb: "FEE2E2" } }, font: { color: { rgb: "991B1B" }, bold: true }, alignment: { horizontal: "center" } };
-      } else if (val === "FLAKY") {
-        cell.s = { fill: { fgColor: { rgb: "FEF9C3" } }, font: { color: { rgb: "713F12" }, bold: true }, alignment: { horizontal: "center" } };
       }
     }
     XLSX.utils.book_append_sheet(wb, wsDetails, "Details");
 
-    var dateStr = new Date().toISOString().split("T")[0];
+    var now = new Date();
+    var dateStr = now.getFullYear() + "-" +
+      String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
     XLSX.writeFile(wb, "identifier-report-" + dateStr + ".xlsx");
     showToast("Exported " + sorted.length + " tests (" + labelledCount + " labelled)", "success");
   });
