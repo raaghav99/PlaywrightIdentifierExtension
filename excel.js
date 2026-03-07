@@ -1,7 +1,7 @@
-/** Playwright Test Identifier - Excel Module v5.0
+/** Playwright Test Identifier - Excel Module v5.1
  * Builds and downloads the .xlsx report.
- * Reads from pw_current_report (scraped + labels) for the active report only.
- * Depends on: esc, showToast, state from content.js / ui.js,
+ * Reads from pw_reports via getReport() for the active report only.
+ * Depends on: esc, showToast, getReport from content.js / ui.js,
  *             and the XLSX global (xlsx.min.js). */
 
 function downloadExcel() {
@@ -10,8 +10,7 @@ function downloadExcel() {
     return;
   }
 
-  chrome.storage.local.get(["pw_current_report"], function (data) {
-    var report  = data.pw_current_report || { url: "", scraped: [], labels: {} };
+  getReport(function (report) {
     var scraped = report.scraped || [];
     var labels  = report.labels || {};
 

@@ -1,13 +1,14 @@
-/** Playwright Test Identifier - Form Module v5.0
+/** Playwright Test Identifier - Form Module v5.1
  * Listeners, autocomplete, populate form, save/delete, saved list, URL watcher,
  * copy-from, label chips, RCA library table.
  *
  * Data model:
- *   pw_current_report  {url, scraped[], labels{}}  — per-report
- *   pw_rca_library     [{id, label, category, owner, jira, useCount, lastUsed}]
+ *   pw_reports      {url: {url, scraped[], labels{}, lastAccessed}} — multi-report
+ *   pw_rca_library  [{id, label, category, owner, jira, useCount, lastUsed}]
  *
  * Depends on: state, ICON_STATUS, normalizeName, esc, showToast, toggleMinimize,
- *             applyPanelPosition, extractRowData, getReportUrl from content.js / ui.js */
+ *             applyPanelPosition, extractRowData, getReportUrl, getReport, saveReport
+ *             from content.js / ui.js */
 
 /* ======================================================
    LISTENERS
@@ -144,7 +145,6 @@ function showSuggestions(field) {
       }
     });
 
-    /* Default categories for empty libraries */
     if (field === "category") {
       ["Functional Bug", "UI Issue", "Code Error", "Network Issue", "Test Optimization"].forEach(function (d) {
         if (!seen[d]) { seen[d] = true; freq[d] = 0; }
@@ -187,7 +187,6 @@ function toggleCopyFromDropdown() {
       return;
     }
 
-    /* Sort by lastUsed descending, take top 20 */
     var sorted = library.slice().sort(function (a, b) {
       return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
     }).slice(0, 20);
@@ -242,8 +241,7 @@ function populateForm(row) {
 
   /* Check if this test already has a label in current report */
   var key = data.sc + "|" + data.name;
-  chrome.storage.local.get(["pw_current_report"], function (d) {
-    var report   = d.pw_current_report || { url: "", scraped: [], labels: {} };
+  getReport(function (report) {
     var existing = report.labels[key];
     if (existing) {
       document.getElementById("pw-label").value    = existing.label || "";
@@ -271,10 +269,9 @@ function updateResultBadge(result) {
    ====================================================== */
 function deleteCurrentEntry() {
   if (!state.editingKey) return;
-  chrome.storage.local.get(["pw_current_report"], function (data) {
-    var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
+  getReport(function (report) {
     delete report.labels[state.editingKey];
-    chrome.storage.local.set({ pw_current_report: report }, function () {
+    saveReport(report, function () {
       refreshCount(Object.keys(report.labels).length);
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
       showToast("Entry deleted", "warning");
@@ -293,10 +290,9 @@ function deleteCurrentEntry() {
    ====================================================== */
 function deleteAllEntries() {
   if (!confirm("Delete all labeled entries for this report?\nRCA library will be preserved.")) return;
-  chrome.storage.local.get(["pw_current_report"], function (data) {
-    var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
+  getReport(function (report) {
     report.labels = {};
-    chrome.storage.local.set({ pw_current_report: report }, function () {
+    saveReport(report, function () {
       refreshCount(0);
       var container = document.getElementById("pw-list-container");
       if (container) container.innerHTML = '<div class="pw-list-empty">No labeled entries yet.</div>';
@@ -343,14 +339,19 @@ function saveEntry() {
     timestamp: now
   };
 
-  chrome.storage.local.get(["pw_current_report", "pw_rca_library"], function (data) {
-    var report  = data.pw_current_report || { url: getReportUrl(), scraped: [], labels: {} };
+  /* Need both pw_reports and pw_rca_library in one transaction */
+  chrome.storage.local.get(["pw_reports", "pw_rca_library"], function (data) {
+    var reports = data.pw_reports || {};
+    var url     = getReportUrl();
+    var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: now };
     var library = data.pw_rca_library || [];
 
     var isUpdate = !!report.labels[key];
 
     /* Write to current report labels (one per test) */
     report.labels[key] = labelData;
+    report.lastAccessed = now;
+    reports[url] = report;
 
     /* Upsert pw_rca_library: match by all 4 fields */
     var rcaKey = rawLabel + "|" + category + "|" + owner + "|" + jira;
@@ -385,7 +386,7 @@ function saveEntry() {
       library = library.slice(0, 200);
     }
 
-    chrome.storage.local.set({ pw_current_report: report, pw_rca_library: library }, function () {
+    chrome.storage.local.set({ pw_reports: reports, pw_rca_library: library }, function () {
       refreshCount(Object.keys(report.labels).length);
       renderLabelChips();
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
@@ -414,8 +415,8 @@ function toggleList() {
   } else {
     section.style.display = "block";
     btn.classList.add("active");
-    chrome.storage.local.get(["pw_current_report"], function (data) {
-      renderList(data.pw_current_report || { url: "", scraped: [], labels: {} });
+    getReport(function (report) {
+      renderList(report);
     });
   }
 }
@@ -430,7 +431,6 @@ function renderList(report) {
     return;
   }
 
-  /* Sort by SC ascending */
   keys.sort(function (a, b) {
     var aNum = parseInt((a.split("|")[0] || "").replace(/\D/g, ""), 10) || 99999;
     var bNum = parseInt((b.split("|")[0] || "").replace(/\D/g, ""), 10) || 99999;
@@ -444,7 +444,6 @@ function renderList(report) {
     var tname  = parts.slice(1).join("|");
     var e      = labels[key];
 
-    /* Find result from scraped data */
     var result = "UNKNOWN";
     (report.scraped || []).forEach(function (s) {
       if (s.sc === sc && s.name === tname) result = s.result;
@@ -472,10 +471,9 @@ function renderList(report) {
 }
 
 function deleteEntry(key) {
-  chrome.storage.local.get(["pw_current_report"], function (data) {
-    var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
+  getReport(function (report) {
     delete report.labels[key];
-    chrome.storage.local.set({ pw_current_report: report }, function () {
+    saveReport(report, function () {
       refreshCount(Object.keys(report.labels).length);
       renderList(report);
       showToast("Entry deleted", "warning");
@@ -533,15 +531,14 @@ function refreshCount(n) {
     document.getElementById("pw-toggle-list-btn").textContent = "View Saved (" + n + ")";
     return;
   }
-  chrome.storage.local.get(["pw_current_report"], function (data) {
-    var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
-    var count  = Object.keys(report.labels).length;
+  getReport(function (report) {
+    var count = Object.keys(report.labels).length;
     document.getElementById("pw-toggle-list-btn").textContent = "View Saved (" + count + ")";
   });
 }
 
 /* ======================================================
-   RCA LIBRARY TABLE (toggled by hamburger ☰)
+   RCA LIBRARY TABLE (toggled by hamburger)
    ====================================================== */
 function toggleRcaLibrary() {
   var section = document.getElementById("pw-rca-section");
@@ -587,7 +584,6 @@ function renderRcaLibrary() {
     html.push('</tbody></table>');
     container.innerHTML = html.join("");
 
-    /* Click row to fill form */
     container.querySelectorAll(".pw-rca-row").forEach(function (row) {
       row.addEventListener("click", function (ev) {
         if (ev.target.classList.contains("pw-rca-delete-btn")) return;
@@ -603,7 +599,6 @@ function renderRcaLibrary() {
       });
     });
 
-    /* Delete buttons */
     container.querySelectorAll(".pw-rca-delete-btn").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.stopPropagation();

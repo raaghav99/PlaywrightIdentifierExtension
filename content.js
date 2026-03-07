@@ -1,10 +1,10 @@
-/** Playwright Test Identifier - Core Bootstrap v5.0
+/** Playwright Test Identifier - Core Bootstrap v5.1
  * Shared constants, state, helpers, and init. Loaded first.
  * ui.js -> form.js -> excel.js depend on globals defined here.
  *
  * Data model:
- *   pw_current_report  {url, scraped[], labels{}}  — per-report, cleared on URL change
- *   pw_rca_library     [{id, label, category, owner, jira, useCount, lastUsed}] — persistent
+ *   pw_reports      {url: {url, scraped[], labels{}, lastAccessed}}  — multi-report, 10-day TTL
+ *   pw_rca_library  [{id, label, category, owner, jira, useCount, lastUsed}] — persistent
  */
 
 /* Guard: only run once */
@@ -70,6 +70,54 @@ if (isPlaywrightReport()) {
     return location.origin + location.pathname;
   }
 
+  /* ── Report storage helpers ── */
+  var REPORT_TTL_DAYS = 10;
+
+  function getReport(cb) {
+    var url = getReportUrl();
+    chrome.storage.local.get(["pw_reports"], function (data) {
+      var reports = data.pw_reports || {};
+      var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() };
+      cb(report);
+    });
+  }
+
+  function saveReport(report, cb) {
+    chrome.storage.local.get(["pw_reports"], function (data) {
+      var reports = data.pw_reports || {};
+      report.lastAccessed = new Date().toISOString();
+      reports[report.url] = report;
+      chrome.storage.local.set({ pw_reports: reports }, function () {
+        if (chrome.runtime.lastError) {
+          console.error("pw-ext: save failed -", chrome.runtime.lastError.message);
+        }
+        if (cb) cb();
+      });
+    });
+  }
+
+  function purgeOldReports(cb) {
+    chrome.storage.local.get(["pw_reports"], function (data) {
+      var reports = data.pw_reports || {};
+      var cutoff  = Date.now() - (REPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
+      var changed = false;
+      Object.keys(reports).forEach(function (url) {
+        var ts = new Date(reports[url].lastAccessed || 0).getTime();
+        if (ts < cutoff) {
+          delete reports[url];
+          changed = true;
+        }
+      });
+      if (changed) {
+        chrome.storage.local.set({ pw_reports: reports }, function () {
+          if (cb) cb();
+        });
+      } else {
+        if (cb) cb();
+      }
+    });
+  }
+
   /* ── Shared row data extraction ── */
   function extractRowData(row) {
     var icon   = row.querySelector("svg.octicon");
@@ -119,12 +167,12 @@ if (isPlaywrightReport()) {
     width:      340,
     minimized:  false,
     formHidden: false,
-    editingKey: null,      /* sc|name key of test being edited */
+    editingKey: null,
     lastUrl:    location.href,
     scraping:   false
   };
 
-  /* ── Auto-scrape all tests on page ── */
+  /* ── Scrape all tests on page ── */
   function scrapeAllTests(cb) {
     if (state.scraping) return;
     state.scraping = true;
@@ -149,22 +197,9 @@ if (isPlaywrightReport()) {
       });
     });
 
-    var currentUrl = getReportUrl();
-    chrome.storage.local.get(["pw_current_report"], function (data) {
-      var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
-
-      if (report.url !== currentUrl) {
-        /* Different report: fresh start with empty labels */
-        report = { url: currentUrl, scraped: scraped, labels: {} };
-      } else {
-        /* Same report: refresh scraped data, keep labels */
-        report.scraped = scraped;
-      }
-
-      chrome.storage.local.set({ pw_current_report: report }, function () {
-        if (chrome.runtime.lastError) {
-          console.error("pw-ext: scrape save failed -", chrome.runtime.lastError.message);
-        }
+    getReport(function (report) {
+      report.scraped = scraped;
+      saveReport(report, function () {
         state.scraping = false;
         if (cb) cb(scraped.length);
       });
@@ -185,8 +220,11 @@ if (isPlaywrightReport()) {
   function init() {
     if (document.getElementById("pw-ext-panel")) return;
 
-    /* One-time cleanup of old storage keys from v4 */
-    chrome.storage.local.remove(["pw_entries", "pw_scraped", "pw_label_history"]);
+    /* Cleanup old storage keys from v4/v5.0 */
+    chrome.storage.local.remove(["pw_entries", "pw_scraped", "pw_label_history", "pw_current_report"]);
+
+    /* Purge reports older than 10 days */
+    purgeOldReports();
 
     injectPanel();          /* ui.js */
     applyPanelPosition();   /* ui.js */
@@ -196,7 +234,17 @@ if (isPlaywrightReport()) {
     setupUrlWatcher();      /* form.js */
     refreshCount();         /* form.js */
     renderLabelChips();     /* form.js */
-    scrapeAllTests();       /* auto-scrape */
+
+    /* Only auto-scrape if this report has no saved scraped data */
+    getReport(function (report) {
+      if (report.scraped && report.scraped.length) {
+        /* Existing report: touch lastAccessed, skip scrape */
+        saveReport(report);
+      } else {
+        /* New report: scrape */
+        scrapeAllTests();
+      }
+    });
   }
 
   waitForTests(init);
