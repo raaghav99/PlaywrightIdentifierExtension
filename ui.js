@@ -1,6 +1,6 @@
-/** Playwright Test Identifier - UI Module v4.0
+/** Playwright Test Identifier - UI Module v5.0
  * Panel HTML injection, layout, drag/resize, minimize, toast.
- * Depends on: state, esc(), todayDDMM() from content.js */
+ * Depends on: state, esc() from content.js */
 
 /* ======================================================
    PANEL HTML
@@ -14,7 +14,7 @@ function injectPanel() {
   h.push('<div id="pw-toolbar">');
   h.push('<button id="pw-dock-left" class="pw-tb-btn" title="Dock Left">&#9664;</button>');
   h.push('<button id="pw-dock-right" class="pw-tb-btn" title="Dock Right">&#9654;</button>');
-  h.push('<button id="pw-toggle-form-btn" class="pw-tb-btn" title="Toggle Form">&#9776;</button>');
+  h.push('<button id="pw-toggle-rca-btn" class="pw-tb-btn" title="RCA Library">&#9776;</button>');
   h.push('<button id="pw-minimize-btn" class="pw-tb-btn" title="Minimize">&#8722;</button>');
   h.push('</div>');
 
@@ -24,28 +24,11 @@ function injectPanel() {
   h.push('<span>Test Identifier</span>');
   h.push('</div>');
 
-  /* Merge banner (hidden by default) */
-  h.push('<div id="pw-merge-banner" style="display:none">');
-  h.push('<span id="pw-merge-msg"></span>');
-  h.push('<div class="pw-merge-actions">');
-  h.push('<button id="pw-merge-new" class="pw-merge-btn">New Entry</button>');
-  h.push('<div class="pw-merge-dropdown-wrap">');
-  h.push('<button id="pw-merge-existing" class="pw-merge-btn pw-merge-btn-alt">Merge &#9662;</button>');
-  h.push('<div id="pw-merge-dropdown" class="pw-merge-dropdown" style="display:none"></div>');
-  h.push('</div></div></div>');
-
   /* Form */
   h.push('<div id="pw-form-section">');
   h.push('<div class="pw-field"><label>SC</label><input id="pw-sc" readonly placeholder="(click a test)" /></div>');
   h.push('<div class="pw-field"><label>Name</label><input id="pw-name" readonly placeholder="..." /></div>');
   h.push('<div class="pw-field"><label>Result</label><span id="pw-result-badge" class="pw-result-display"></span><input id="pw-result" type="hidden" /></div>');
-
-  /* Date picker */
-  h.push('<div class="pw-field pw-date-row">');
-  h.push('<label>Date</label>');
-  h.push('<input id="pw-date-picker" type="text" value="' + todayDDMM() + '" placeholder="DD/MM" maxlength="5" />');
-  h.push('<label class="pw-all-dates-label"><input type="checkbox" id="pw-all-dates" /> All dates</label>');
-  h.push('</div>');
 
   /* Label + Copy from */
   h.push('<div class="pw-field pw-field-input">');
@@ -65,8 +48,17 @@ function injectPanel() {
   h.push('</div>');
   h.push('</div>');
 
-  /* Saved list */
+  /* Saved list (current report labels) */
   h.push('<div id="pw-list-section" style="display:none"><div id="pw-list-container"></div></div>');
+
+  /* RCA Library (hidden by default, toggled by hamburger) */
+  h.push('<div id="pw-rca-section" style="display:none">');
+  h.push('<div class="pw-rca-header">');
+  h.push('<span>RCA Library</span>');
+  h.push('<span id="pw-rca-count" class="pw-rca-count"></span>');
+  h.push('</div>');
+  h.push('<div id="pw-rca-container"></div>');
+  h.push('</div>');
 
   /* Footer */
   h.push('<div id="pw-footer">');
@@ -74,7 +66,7 @@ function injectPanel() {
   h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
   h.push('<button id="pw-toggle-list-btn">View Saved (0)</button>');
   h.push('<button id="pw-download-btn">Download Excel</button>');
-  h.push('<button id="pw-delete-all-btn" class="pw-footer-btn-danger" title="Delete All Data">&#128465;</button>');
+  h.push('<button id="pw-delete-all-btn" class="pw-footer-btn-danger" title="Delete Report Labels">&#128465;</button>');
   h.push('</div>');
 
   /* Resize handle */
@@ -119,21 +111,6 @@ function toggleMinimize() {
   } else {
     panel.classList.remove("pw-minimized");
     applyPanelPosition();
-  }
-}
-
-function toggleForm() {
-  state.formHidden = !state.formHidden;
-  var form   = document.getElementById("pw-form-section");
-  var banner = document.getElementById("pw-merge-banner");
-  if (state.formHidden) {
-    form.style.display   = "none";
-    banner.style.display = "none";
-  } else {
-    form.style.display = "";
-    if (state.editingId || document.getElementById("pw-merge-msg").textContent) {
-      banner.style.display = "";
-    }
   }
 }
 

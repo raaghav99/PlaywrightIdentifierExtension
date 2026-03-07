@@ -1,6 +1,11 @@
-/** Playwright Test Identifier - Core Bootstrap v4.0
+/** Playwright Test Identifier - Core Bootstrap v5.0
  * Shared constants, state, helpers, and init. Loaded first.
- * ui.js -> form.js -> excel.js depend on globals defined here. */
+ * ui.js -> form.js -> excel.js depend on globals defined here.
+ *
+ * Data model:
+ *   pw_current_report  {url, scraped[], labels{}}  — per-report, cleared on URL change
+ *   pw_rca_library     [{id, label, category, owner, jira, useCount, lastUsed}] — persistent
+ */
 
 /* Guard: only run once */
 if (document.getElementById("pw-ext-panel")) { /* already injected */ }
@@ -25,7 +30,7 @@ if (isPlaywrightReport()) {
     "color-icon-subtle":  "SKIPPED"
   };
 
-  /* ── Name normalization (mirrors excelmaker.js) ── */
+  /* ── Name normalization ── */
   var NORM = {
     delimiters:     [":", "/", "|", "\u2013", "\u2014", "_"],
     removePatterns: [
@@ -60,24 +65,13 @@ if (isPlaywrightReport()) {
       .replace(/"/g, "&quot;");
   }
 
-  /* ── Date helpers ── */
-  function todayDDMM() {
-    var d = new Date();
-    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+  /* ── Report URL (identifies a unique report) ── */
+  function getReportUrl() {
+    return location.origin + location.pathname;
   }
 
-  function stripDatePrefix(label) {
-    return (label || "").replace(/^\d{2}\/\d{2}:\s*/, "");
-  }
-
-  function getDatePrefix(label) {
-    var m = (label || "").match(/^(\d{2}\/\d{2}):/);
-    return m ? m[1] : null;
-  }
-
-  /* ── Shared row data extraction (used by populateForm + scrapeAllTests) ── */
+  /* ── Shared row data extraction ── */
   function extractRowData(row) {
-    /* Result from icon */
     var icon   = row.querySelector("svg.octicon");
     var result = "UNKNOWN";
     if (icon) {
@@ -96,7 +90,6 @@ if (isPlaywrightReport()) {
       }
     }
 
-    /* SC from labels */
     var labels = row.querySelectorAll(".label");
     var sc = "N/A";
     for (var j = 0; j < labels.length; j++) {
@@ -105,13 +98,11 @@ if (isPlaywrightReport()) {
       if (m) { sc = "SC_" + String(parseInt(m[1], 10)).padStart(3, "0"); break; }
     }
 
-    /* Name from title -- normalized */
     var titleEl = row.querySelector(".test-file-title");
     var rawName = titleEl ? titleEl.textContent.trim() : "";
     rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
     var name = normalizeName(rawName);
 
-    /* testId from anchor href */
     var testId = "";
     var anchor = row.querySelector('a[href*="testId="]');
     if (anchor) {
@@ -122,17 +113,15 @@ if (isPlaywrightReport()) {
     return { sc: sc, name: name, result: result, testId: testId };
   }
 
-  /* ── Panel state (shared across modules) ── */
+  /* ── Panel state ── */
   var state = {
-    side:         "right",
-    width:        340,
-    minimized:    false,
-    formHidden:   false,
-    editingId:    null,
-    lastUrl:      location.href,
-    selectedDate: todayDDMM(),
-    allDates:     false,
-    scraping:     false
+    side:       "right",
+    width:      340,
+    minimized:  false,
+    formHidden: false,
+    editingKey: null,      /* sc|name key of test being edited */
+    lastUrl:    location.href,
+    scraping:   false
   };
 
   /* ── Auto-scrape all tests on page ── */
@@ -150,7 +139,6 @@ if (isPlaywrightReport()) {
     var scraped = [];
     rows.forEach(function (row, idx) {
       var data = extractRowData(row);
-      /* Use testId as unique key; fall back to index-based key */
       var id = data.testId || (data.sc + "|" + data.name + "|" + idx);
       scraped.push({
         id:     id,
@@ -161,13 +149,25 @@ if (isPlaywrightReport()) {
       });
     });
 
-    /* Replace pw_scraped entirely each scrape to get accurate count */
-    chrome.storage.local.set({ pw_scraped: scraped }, function () {
-      if (chrome.runtime.lastError) {
-        console.error("pw-ext: scrape save failed –", chrome.runtime.lastError.message);
+    var currentUrl = getReportUrl();
+    chrome.storage.local.get(["pw_current_report"], function (data) {
+      var report = data.pw_current_report || { url: "", scraped: [], labels: {} };
+
+      if (report.url !== currentUrl) {
+        /* Different report: fresh start with empty labels */
+        report = { url: currentUrl, scraped: scraped, labels: {} };
+      } else {
+        /* Same report: refresh scraped data, keep labels */
+        report.scraped = scraped;
       }
-      state.scraping = false;
-      if (cb) cb(scraped.length);
+
+      chrome.storage.local.set({ pw_current_report: report }, function () {
+        if (chrome.runtime.lastError) {
+          console.error("pw-ext: scrape save failed -", chrome.runtime.lastError.message);
+        }
+        state.scraping = false;
+        if (cb) cb(scraped.length);
+      });
     });
   }
 
@@ -184,12 +184,12 @@ if (isPlaywrightReport()) {
 
   function init() {
     if (document.getElementById("pw-ext-panel")) return;
-    state.selectedDate = todayDDMM();
+
+    /* One-time cleanup of old storage keys from v4 */
+    chrome.storage.local.remove(["pw_entries", "pw_scraped", "pw_label_history"]);
+
     injectPanel();          /* ui.js */
     applyPanelPosition();   /* ui.js */
-    /* Update date picker to current day */
-    var dp = document.getElementById("pw-date-picker");
-    if (dp) dp.value = state.selectedDate;
     attachListeners();      /* form.js */
     listenForTestClicks();  /* form.js */
     setupDragResize();      /* ui.js */

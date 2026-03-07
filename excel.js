@@ -1,54 +1,44 @@
-/** Playwright Test Identifier - Excel Module v4.0
+/** Playwright Test Identifier - Excel Module v5.0
  * Builds and downloads the .xlsx report.
- * Merges pw_scraped (all tests) + pw_entries (labelled) for full export.
- * Depends on: esc, showToast, state, stripDatePrefix from content.js / ui.js,
+ * Reads from pw_current_report (scraped + labels) for the active report only.
+ * Depends on: esc, showToast, state from content.js / ui.js,
  *             and the XLSX global (xlsx.min.js). */
 
-/* ======================================================
-   EXCEL DOWNLOAD
-   - Merges scraped + labelled data
-   - Sorts by SC ascending
-   - Filters by selected date (unless "All dates")
-   ====================================================== */
 function downloadExcel() {
   if (typeof XLSX === "undefined") {
     showToast("XLSX not loaded", "error");
     return;
   }
 
-  chrome.storage.local.get(["pw_entries", "pw_scraped"], function (data) {
-    var entries = data.pw_entries || [];
-    var scraped = data.pw_scraped || [];
+  chrome.storage.local.get(["pw_current_report"], function (data) {
+    var report  = data.pw_current_report || { url: "", scraped: [], labels: {} };
+    var scraped = report.scraped || [];
+    var labels  = report.labels || {};
 
-    /* Date filter for labelled entries */
-    var dateFilter = null;
-    if (!state.allDates && state.selectedDate) {
-      dateFilter = state.selectedDate + ":";
+    if (!scraped.length) {
+      showToast("No tests found to export. Scrape first.", "warning");
+      return;
     }
-
-    /* Build labelled map keyed by sc|name, pre-filtered by date.
-       Scoped to the current scrape so entries from other reports are excluded. */
-    var labelledMap = {};
-    entries.forEach(function (e) {
-      if (dateFilter && (e.label || "").indexOf(dateFilter) !== 0) return;
-      var key = e.sc + "|" + e.name;
-      if (!labelledMap[key]) labelledMap[key] = [];
-      labelledMap[key].push(e);
-    });
 
     var allRows = [];
     var labelledCount = 0;
 
-    /* Use scraped as the authoritative test list so only tests from the
-       current report appear. Enrich each row with its label(s) if saved. */
+    /* Use scraped as authoritative list, enrich with labels via O(1) lookup */
     scraped.forEach(function (s) {
       var key = s.sc + "|" + s.name;
-      var matches = labelledMap[key];
-      if (matches && matches.length) {
-        matches.forEach(function (e) {
-          allRows.push(e);
-          labelledCount++;
+      var lbl = labels[key];
+      if (lbl) {
+        allRows.push({
+          sc:        s.sc,
+          name:      s.name,
+          result:    s.result,
+          label:     lbl.label || "",
+          category:  lbl.category || "",
+          owner:     lbl.owner || "",
+          jira:      lbl.jira || "",
+          timestamp: lbl.timestamp
         });
+        labelledCount++;
       } else {
         allRows.push({
           sc:        s.sc,
@@ -63,13 +53,8 @@ function downloadExcel() {
       }
     });
 
-    if (!allRows.length) {
-      showToast("No tests found to export", "warning");
-      return;
-    }
-
     /* Sort by SC ascending */
-    var sorted = allRows.sort(function (a, b) {
+    allRows.sort(function (a, b) {
       var aNum = parseInt((a.sc || "").replace(/\D/g, ""), 10) || 99999;
       var bNum = parseInt((b.sc || "").replace(/\D/g, ""), 10) || 99999;
       return aNum - bNum;
@@ -79,25 +64,23 @@ function downloadExcel() {
 
     /* ── Summary Sheet ── */
     var catCount = {}, ownCount = {}, resCount = {};
-    sorted.forEach(function (e) {
+    allRows.forEach(function (e) {
       var res = e.result || "UNKNOWN";
       resCount[res] = (resCount[res] || 0) + 1;
       if (e.label) {
-        var cat = e.category || "Uncategorised";
-        var own = e.owner    || "Unassigned";
-        catCount[cat] = (catCount[cat] || 0) + 1;
-        ownCount[own] = (ownCount[own] || 0) + 1;
+        catCount[e.category || "Uncategorised"] = (catCount[e.category || "Uncategorised"] || 0) + 1;
+        ownCount[e.owner || "Unassigned"]       = (ownCount[e.owner || "Unassigned"] || 0) + 1;
       }
     });
 
     var summaryRows = [
       ["Playwright Identifier Report"],
       ["Generated:", new Date().toLocaleString()],
-      dateFilter ? ["Date Filter:", state.selectedDate] : [],
+      ["Report URL:", report.url || "Unknown"],
       [],
-      ["Total Tests", sorted.length],
+      ["Total Tests", allRows.length],
       ["Labelled", labelledCount],
-      ["Unlabelled", sorted.length - labelledCount],
+      ["Unlabelled", allRows.length - labelledCount],
       [],
       ["By Result", "Count"]
     ].concat(Object.entries(resCount).sort(function (a, b) { return b[1] - a[1]; }))
@@ -117,16 +100,16 @@ function downloadExcel() {
     XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
 
     /* ── Details Sheet ── */
-    var header = ["SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira", "Labeled Date"];
-    var rows = sorted.map(function (e) {
+    var header = ["SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira", "Timestamp"];
+    var rows = allRows.map(function (e) {
       return [
         e.sc,
         e.name,
         e.result,
-        e.label || "",
-        e.category || "",
-        e.owner || "",
-        e.jira || "",
+        e.label,
+        e.category,
+        e.owner,
+        e.jira,
         e.timestamp ? new Date(e.timestamp).toLocaleString() : ""
       ];
     });
@@ -166,6 +149,6 @@ function downloadExcel() {
       String(now.getMonth() + 1).padStart(2, "0") + "-" +
       String(now.getDate()).padStart(2, "0");
     XLSX.writeFile(wb, "identifier-report-" + dateStr + ".xlsx");
-    showToast("Exported " + sorted.length + " tests (" + labelledCount + " labelled)", "success");
+    showToast("Exported " + allRows.length + " tests (" + labelledCount + " labelled)", "success");
   });
 }
