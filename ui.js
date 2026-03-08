@@ -12,7 +12,6 @@ function injectPanel() {
 
   /* Toolbar */
   h.push('<div id="pw-toolbar">');
-  h.push('<button id="pw-dock-left" class="pw-tb-btn" title="Dock Left">&#9664;</button>');
   h.push('<button id="pw-dock-right" class="pw-tb-btn" title="Dock Right">&#9654;</button>');
   h.push('<button id="pw-toggle-rca-btn" class="pw-tb-btn" title="RCA Library">&#9776;</button>');
   h.push('<button id="pw-minimize-btn" class="pw-tb-btn" title="Minimize">&#8722;</button>');
@@ -78,6 +77,12 @@ function injectPanel() {
   panel.innerHTML = h.join("");
   document.body.appendChild(panel);
 
+  var toggle = document.createElement("div");
+  toggle.id = "pw-page-toggle";
+  toggle.title = "Show / Hide Test Identifier";
+  toggle.innerHTML = '&#9664;';
+  document.body.appendChild(toggle);
+
   var toast = document.createElement("div");
   toast.id = "pw-toast";
   document.body.appendChild(toast);
@@ -89,32 +94,45 @@ function injectPanel() {
 function applyPanelPosition() {
   var panel  = document.getElementById("pw-ext-panel");
   var handle = document.getElementById("pw-resize-handle");
+  var tab    = document.getElementById("pw-page-toggle");
   panel.style.width = state.width + "px";
   if (state.side === "right") {
     panel.style.right = "0"; panel.style.left = "auto";
-    document.body.style.paddingRight = state.width + "px";
-    document.body.style.paddingLeft  = "";
+    panel.classList.remove("pw-docked-left");
     handle.style.left = "0"; handle.style.right = "auto";
+    if (!state.minimized) {
+      document.body.style.paddingRight = state.width + "px";
+      document.body.style.paddingLeft  = "";
+    }
+    if (tab) { tab.style.left = "0"; tab.style.right = "auto"; tab.innerHTML = "&#9664;"; }
   } else {
     panel.style.left = "0"; panel.style.right = "auto";
-    document.body.style.paddingLeft  = state.width + "px";
-    document.body.style.paddingRight = "";
+    panel.classList.add("pw-docked-left");
     handle.style.right = "0"; handle.style.left = "auto";
+    if (!state.minimized) {
+      document.body.style.paddingLeft  = state.width + "px";
+      document.body.style.paddingRight = "";
+      if (tab) { tab.style.left = state.width + "px"; tab.style.right = "auto"; tab.innerHTML = "&#9654;"; }
+    } else {
+      if (tab) { tab.style.left = "0"; tab.style.right = "auto"; tab.innerHTML = "&#9664;"; }
+    }
   }
   document.body.style.boxSizing = "border-box";
 }
 
 function toggleMinimize() {
   var panel = document.getElementById("pw-ext-panel");
+  var tab   = document.getElementById("pw-page-toggle");
   state.minimized = !state.minimized;
   if (state.minimized) {
     panel.classList.add("pw-minimized");
     if (state.side === "left") panel.classList.add("pw-docked-left");
-    else panel.classList.remove("pw-docked-left");
     document.body.style.paddingRight = "";
     document.body.style.paddingLeft  = "";
+    if (tab) { tab.style.left = "0"; tab.innerHTML = "&#9664;"; }
   } else {
     panel.classList.remove("pw-minimized");
+    panel.classList.remove("pw-docked-left");
     applyPanelPosition();
   }
 }

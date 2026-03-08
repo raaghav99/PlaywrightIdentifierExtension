@@ -35,11 +35,17 @@ function attachListeners() {
       showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
     });
   });
-  document.getElementById("pw-dock-left").addEventListener("click", function () {
-    state.side = "left"; applyPanelPosition();
-  });
   document.getElementById("pw-dock-right").addEventListener("click", function () {
     state.side = "right"; applyPanelPosition();
+  });
+  document.getElementById("pw-page-toggle").addEventListener("click", function () {
+    if (state.minimized) {
+      toggleMinimize();
+    } else if (state.side === "right") {
+      state.side = "left"; applyPanelPosition();
+    } else {
+      toggleMinimize();
+    }
   });
   document.getElementById("pw-minimize-btn").addEventListener("click", toggleMinimize);
   document.getElementById("pw-toggle-rca-btn").addEventListener("click", toggleRcaLibrary);
