@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Playwright Test Identifier",
-  "version": "2.1.0",
+  "version": "2.2.5",
   "description": "Label and export Playwright test results directly from the HTML report",
   "icons": {
     "48": "icons/icon48.png"

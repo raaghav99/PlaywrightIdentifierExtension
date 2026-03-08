@@ -12,9 +12,13 @@ function injectPanel() {
 
   /* Toolbar */
   h.push('<div id="pw-toolbar">');
-  h.push('<button id="pw-dock-right" class="pw-tb-btn" title="Dock Right">&#9654;</button>');
+  h.push('<button id="pw-dock-btn" class="pw-tb-btn" title="Switch Side">&#9664;</button>');
   h.push('<button id="pw-toggle-rca-btn" class="pw-tb-btn" title="RCA Library">&#9776;</button>');
-  h.push('<button id="pw-minimize-btn" class="pw-tb-btn" title="Minimize">&#8722;</button>');
+  h.push('<button id="pw-toggle-list-btn" class="pw-tb-btn pw-tb-text-btn" title="View Saved Entries">Saved (0)</button>');
+  h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
+  h.push('<button id="pw-scrape-btn" class="pw-tb-btn pw-tb-text-btn" title="Re-scrape tests">&#8635;</button>');
+  h.push('<button id="pw-download-btn" class="pw-tb-btn pw-tb-text-btn pw-tb-green" title="Download Excel">&#8595; Excel</button>');
+  h.push('<button id="pw-delete-all-btn" class="pw-tb-btn pw-tb-danger" title="Delete Report Labels">&#128465;</button>');
   h.push('</div>');
 
   /* Header */
@@ -45,30 +49,29 @@ function injectPanel() {
   h.push('<div class="pw-field pw-field-input"><label>Owner</label><input id="pw-owner" placeholder="e.g. Frontend Team" autocomplete="off" /><div id="pw-suggest-owner" class="pw-autocomplete-list"></div></div>');
   h.push('<div class="pw-field pw-field-input"><label>Jira</label><input id="pw-jira" placeholder="e.g. PROJ-123" autocomplete="off" /><div id="pw-suggest-jira" class="pw-autocomplete-list"></div></div>');
   h.push('<div class="pw-form-buttons">');
+  h.push('<input type="date" id="pw-label-date" class="pw-date-input" title="Entry date (DD/MM)" />');
   h.push('<button id="pw-save-btn">Save Entry</button>');
   h.push('<button id="pw-delete-current-btn" class="pw-btn-danger" style="display:none">Delete</button>');
   h.push('</div>');
   h.push('</div>');
 
   /* Saved list (current report labels) */
-  h.push('<div id="pw-list-section" style="display:none"><div id="pw-list-container"></div></div>');
+  h.push('<div id="pw-list-section" style="display:none">');
+  h.push('<div class="pw-view-hint">&#8617; Click <strong>Saved</strong> again to return to form</div>');
+  h.push('<div id="pw-date-filter-bar">');
+  h.push('<label class="pw-date-filter-label"><input type="checkbox" id="pw-date-filter-check"> Filter by date</label>');
+  h.push('<input type="date" id="pw-date-filter-input" style="display:none" />');
+  h.push('</div>');
+  h.push('<div id="pw-list-container"></div></div>');
 
   /* RCA Library (hidden by default, toggled by hamburger) */
   h.push('<div id="pw-rca-section" style="display:none">');
+  h.push('<div class="pw-view-hint">&#8617; Click <strong>&#9776; RCA</strong> again to return to form</div>');
   h.push('<div class="pw-rca-header">');
   h.push('<span>RCA Library</span>');
   h.push('<span id="pw-rca-count" class="pw-rca-count"></span>');
   h.push('</div>');
   h.push('<div id="pw-rca-container"></div>');
-  h.push('</div>');
-
-  /* Footer */
-  h.push('<div id="pw-footer">');
-  h.push('<button id="pw-scrape-btn" title="Re-scrape tests">&#8635; Scrape</button>');
-  h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
-  h.push('<button id="pw-toggle-list-btn">View Saved (0)</button>');
-  h.push('<button id="pw-download-btn">Download Excel</button>');
-  h.push('<button id="pw-delete-all-btn" class="pw-footer-btn-danger" title="Delete Report Labels">&#128465;</button>');
   h.push('</div>');
 
   /* Resize handle */
@@ -92,9 +95,10 @@ function injectPanel() {
    POSITION & LAYOUT
    ====================================================== */
 function applyPanelPosition() {
-  var panel  = document.getElementById("pw-ext-panel");
-  var handle = document.getElementById("pw-resize-handle");
-  var tab    = document.getElementById("pw-page-toggle");
+  var panel   = document.getElementById("pw-ext-panel");
+  var handle  = document.getElementById("pw-resize-handle");
+  var tab     = document.getElementById("pw-page-toggle");
+  var dockBtn = document.getElementById("pw-dock-btn");
   panel.style.width = state.width + "px";
   if (state.side === "right") {
     panel.style.right = "0"; panel.style.left = "auto";
@@ -104,7 +108,13 @@ function applyPanelPosition() {
       document.body.style.paddingRight = state.width + "px";
       document.body.style.paddingLeft  = "";
     }
-    if (tab) { tab.style.left = "0"; tab.style.right = "auto"; tab.innerHTML = "&#9664;"; }
+    if (tab) {
+      tab.style.right = state.minimized ? "0" : state.width + "px";
+      tab.style.left  = "auto";
+      tab.style.borderRadius = "8px 0 0 8px";
+      tab.innerHTML = state.minimized ? "&#9664;" : "&#9654;";
+    }
+    if (dockBtn) dockBtn.innerHTML = "&#9664;";
   } else {
     panel.style.left = "0"; panel.style.right = "auto";
     panel.classList.add("pw-docked-left");
@@ -112,10 +122,14 @@ function applyPanelPosition() {
     if (!state.minimized) {
       document.body.style.paddingLeft  = state.width + "px";
       document.body.style.paddingRight = "";
-      if (tab) { tab.style.left = state.width + "px"; tab.style.right = "auto"; tab.innerHTML = "&#9654;"; }
-    } else {
-      if (tab) { tab.style.left = "0"; tab.style.right = "auto"; tab.innerHTML = "&#9664;"; }
     }
+    if (tab) {
+      tab.style.left  = state.minimized ? "0" : state.width + "px";
+      tab.style.right = "auto";
+      tab.style.borderRadius = "0 8px 8px 0";
+      tab.innerHTML = state.minimized ? "&#9654;" : "&#9665;";
+    }
+    if (dockBtn) dockBtn.innerHTML = "&#9654;";
   }
   document.body.style.boxSizing = "border-box";
 }
@@ -129,7 +143,17 @@ function toggleMinimize() {
     if (state.side === "left") panel.classList.add("pw-docked-left");
     document.body.style.paddingRight = "";
     document.body.style.paddingLeft  = "";
-    if (tab) { tab.style.left = "0"; tab.innerHTML = "&#9664;"; }
+    if (tab) {
+      if (state.side === "right") {
+        tab.style.right = "0"; tab.style.left = "auto";
+        tab.style.borderRadius = "8px 0 0 8px";
+        tab.innerHTML = "&#9664;";
+      } else {
+        tab.style.left = "0"; tab.style.right = "auto";
+        tab.style.borderRadius = "0 8px 8px 0";
+        tab.innerHTML = "&#9654;";
+      }
+    }
   } else {
     panel.classList.remove("pw-minimized");
     panel.classList.remove("pw-docked-left");

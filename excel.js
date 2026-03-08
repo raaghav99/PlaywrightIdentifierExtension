@@ -31,7 +31,7 @@ function downloadExcel() {
           sc:        s.sc,
           name:      s.name,
           result:    s.result,
-          label:     lbl.label || "",
+          label:     (lbl.labelDate ? lbl.labelDate + ": " : "") + (lbl.label || ""),
           category:  lbl.category || "",
           owner:     lbl.owner || "",
           jira:      lbl.jira || "",
@@ -99,7 +99,7 @@ function downloadExcel() {
     XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
 
     /* ── Details Sheet ── */
-    var header = ["SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira", "Timestamp"];
+    var header = ["SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira"];
     var rows = allRows.map(function (e) {
       return [
         e.sc,
@@ -108,18 +108,17 @@ function downloadExcel() {
         e.label,
         e.category,
         e.owner,
-        e.jira,
-        e.timestamp ? new Date(e.timestamp).toLocaleString() : ""
+        e.jira
       ];
     });
     var wsDetails = XLSX.utils.aoa_to_sheet([header].concat(rows));
     wsDetails["!cols"] = [
       { width: 12 }, { width: 48 }, { width: 10 }, { width: 28 },
-      { width: 18 }, { width: 18 }, { width: 14 }, { width: 20 }
+      { width: 18 }, { width: 18 }, { width: 14 }
     ];
 
     /* Header row styling */
-    ["A","B","C","D","E","F","G","H"].forEach(function (col) {
+    ["A","B","C","D","E","F","G"].forEach(function (col) {
       var ref = col + "1";
       if (wsDetails[ref]) wsDetails[ref].s = {
         font:      { bold: true, color: { rgb: "FFFFFF" } },

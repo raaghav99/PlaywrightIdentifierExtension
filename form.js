@@ -10,6 +10,20 @@
  *             applyPanelPosition, extractRowData, getReportUrl, getReport, saveReport
  *             from content.js / ui.js */
 
+function todayIso() {
+  var t = new Date();
+  return t.getFullYear() + "-" +
+    String(t.getMonth() + 1).padStart(2, "0") + "-" +
+    String(t.getDate()).padStart(2, "0");
+}
+
+function isoToDdMm(isoDate) {
+  /* "YYYY-MM-DD" → "DD/MM" */
+  var parts = (isoDate || "").split("-");
+  if (parts.length < 3) return "";
+  return parts[2] + "/" + parts[1];
+}
+
 /* ======================================================
    LISTENERS
    ====================================================== */
@@ -35,19 +49,11 @@ function attachListeners() {
       showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
     });
   });
-  document.getElementById("pw-dock-right").addEventListener("click", function () {
-    state.side = "right"; applyPanelPosition();
+  document.getElementById("pw-dock-btn").addEventListener("click", function () {
+    state.side = state.side === "right" ? "left" : "right";
+    applyPanelPosition();
   });
-  document.getElementById("pw-page-toggle").addEventListener("click", function () {
-    if (state.minimized) {
-      toggleMinimize();
-    } else if (state.side === "right") {
-      state.side = "left"; applyPanelPosition();
-    } else {
-      toggleMinimize();
-    }
-  });
-  document.getElementById("pw-minimize-btn").addEventListener("click", toggleMinimize);
+  document.getElementById("pw-page-toggle").addEventListener("click", toggleMinimize);
   document.getElementById("pw-toggle-rca-btn").addEventListener("click", toggleRcaLibrary);
   document.getElementById("pw-label").addEventListener("keydown", function (e) {
     if (e.key === "Enter") saveEntry();
@@ -61,6 +67,29 @@ function attachListeners() {
 
   /* Copy-from button */
   document.getElementById("pw-copy-from-btn").addEventListener("click", toggleCopyFromDropdown);
+
+  /* Initialise date picker to today */
+  document.getElementById("pw-label-date").value = todayIso();
+
+  /* Date filter */
+  document.getElementById("pw-date-filter-check").addEventListener("change", function () {
+    var input = document.getElementById("pw-date-filter-input");
+    if (this.checked) {
+      if (!input.value) {
+        var t = new Date();
+        input.value = t.getFullYear() + "-" +
+          String(t.getMonth() + 1).padStart(2, "0") + "-" +
+          String(t.getDate()).padStart(2, "0");
+      }
+      input.style.display = "inline-block";
+    } else {
+      input.style.display = "none";
+    }
+    getReport(function (r) { renderList(r); });
+  });
+  document.getElementById("pw-date-filter-input").addEventListener("change", function () {
+    getReport(function (r) { renderList(r); });
+  });
 
   /* Prevent keystrokes inside panel from reaching Playwright's scroll handlers */
   var panel = document.getElementById("pw-ext-panel");
@@ -258,6 +287,15 @@ function populateForm(row) {
       document.getElementById("pw-category").value = existing.category || "";
       document.getElementById("pw-owner").value    = existing.owner || "";
       document.getElementById("pw-jira").value     = existing.jira || "";
+      /* Restore saved date or fall back to today */
+      var savedDdMm = existing.labelDate || "";
+      if (savedDdMm && /^\d{2}\/\d{2}$/.test(savedDdMm)) {
+        var year = new Date().getFullYear();
+        document.getElementById("pw-label-date").value =
+          year + "-" + savedDdMm.split("/")[1] + "-" + savedDdMm.split("/")[0];
+      } else {
+        document.getElementById("pw-label-date").value = todayIso();
+      }
       state.editingKey = key;
       document.getElementById("pw-save-btn").textContent              = "Update Entry";
       document.getElementById("pw-delete-current-btn").style.display = "";
@@ -306,10 +344,7 @@ function deleteAllEntries() {
       refreshCount(0);
       updateStatusBar(report.scraped.length, 0, report.scraped.length > 0);
       var container = document.getElementById("pw-list-container");
-      if (container) container.innerHTML = '<div class="pw-list-empty">No labeled entries yet.</div>';
-      var section = document.getElementById("pw-list-section");
-      if (section) section.style.display = "none";
-      document.getElementById("pw-toggle-list-btn").classList.remove("active");
+      showView("form");
       showToast("Report labels cleared", "warning");
     });
   });
@@ -336,17 +371,19 @@ function saveEntry() {
   }
   labelEl.classList.remove("pw-error");
 
-  var category = document.getElementById("pw-category").value.trim();
-  var owner    = document.getElementById("pw-owner").value.trim();
-  var jira     = document.getElementById("pw-jira").value.trim();
-  var now      = new Date().toISOString();
-  var key      = sc + "|" + name;
+  var category  = document.getElementById("pw-category").value.trim();
+  var owner     = document.getElementById("pw-owner").value.trim();
+  var jira      = document.getElementById("pw-jira").value.trim();
+  var labelDate = isoToDdMm(document.getElementById("pw-label-date").value);
+  var now       = new Date().toISOString();
+  var key       = sc + "|" + name;
 
   var labelData = {
     label:     rawLabel,
     category:  category,
     owner:     owner,
     jira:      jira,
+    labelDate: labelDate,
     timestamp: now
   };
 
@@ -419,17 +456,11 @@ function saveEntry() {
    SAVED LIST (current report labels)
    ====================================================== */
 function toggleList() {
-  var section = document.getElementById("pw-list-section");
-  var btn     = document.getElementById("pw-toggle-list-btn");
-  if (section.style.display !== "none") {
-    section.style.display = "none";
-    btn.classList.remove("active");
+  if (document.getElementById("pw-list-section").style.display === "block") {
+    showView("form");
   } else {
-    section.style.display = "block";
-    btn.classList.add("active");
-    getReport(function (report) {
-      renderList(report);
-    });
+    showView("list");
+    getReport(function (report) { renderList(report); });
   }
 }
 
@@ -438,8 +469,28 @@ function renderList(report) {
   var labels    = report.labels || {};
   var keys      = Object.keys(labels);
 
+  /* Apply date filter if active */
+  var filterChk   = document.getElementById("pw-date-filter-check");
+  var filterInput = document.getElementById("pw-date-filter-input");
+  var filterDate  = (filterChk && filterChk.checked && filterInput && filterInput.value)
+    ? filterInput.value : null; /* "YYYY-MM-DD" */
+
+  if (filterDate) {
+    keys = keys.filter(function (key) {
+      var ts = labels[key].timestamp;
+      if (!ts) return false;
+      var d = new Date(ts);
+      var ds = d.getFullYear() + "-" +
+        String(d.getMonth() + 1).padStart(2, "0") + "-" +
+        String(d.getDate()).padStart(2, "0");
+      return ds === filterDate;
+    });
+  }
+
   if (!keys.length) {
-    container.innerHTML = '<div class="pw-list-empty">No labeled entries yet.<br>Click a test and fill in the form.</div>';
+    container.innerHTML = '<div class="pw-list-empty">' +
+      (filterDate ? "No entries for this date." : "No labeled entries yet.<br>Click a test and fill in the form.") +
+      '</div>';
     return;
   }
 
@@ -461,6 +512,9 @@ function renderList(report) {
       if (s.sc === sc && s.name === tname) result = s.result;
     });
 
+    /* Date prefix: DD/MM from user-set labelDate */
+    var datePrefix = e.labelDate ? e.labelDate + ": " : "";
+
     var rc   = "pw-badge-" + result.toLowerCase();
     var meta = [e.category, e.owner, e.jira].filter(Boolean).join(" \u00b7 ");
     html.push('<div class="pw-entry-card">' +
@@ -468,7 +522,7 @@ function renderList(report) {
         '<span class="pw-badge ' + rc + '">' + esc(result) + '</span> ' +
         '[' + esc(sc) + '] ' + esc(tname) +
       '</div>' +
-      '<div class="pw-entry-label">' + esc(e.label || "No label") + '</div>' +
+      '<div class="pw-entry-label"><span class="pw-entry-date">' + esc(datePrefix) + '</span>' + esc(e.label || "No label") + '</div>' +
       (meta ? '<div class="pw-entry-meta">' + esc(meta) + '</div>' : '') +
       '<button class="pw-delete-btn" data-key="' + esc(key) + '" title="Delete">\u2715</button>' +
       '</div>');
@@ -540,24 +594,34 @@ function renderLabelChips() {
 
 function refreshCount(n) {
   if (typeof n === "number") {
-    document.getElementById("pw-toggle-list-btn").textContent = "View Saved (" + n + ")";
+    document.getElementById("pw-toggle-list-btn").textContent = "Saved (" + n + ")";
     return;
   }
   getReport(function (report) {
     var count = Object.keys(report.labels).length;
-    document.getElementById("pw-toggle-list-btn").textContent = "View Saved (" + count + ")";
+    document.getElementById("pw-toggle-list-btn").textContent = "Saved (" + count + ")";
   });
+}
+
+/* ======================================================
+   VIEW SWITCHER
+   ====================================================== */
+function showView(view) {
+  document.getElementById("pw-form-section").style.display  = view === "form" ? "flex" : "none";
+  document.getElementById("pw-list-section").style.display  = view === "list" ? "block" : "none";
+  document.getElementById("pw-rca-section").style.display   = view === "rca"  ? "block" : "none";
+  document.getElementById("pw-toggle-list-btn").classList.toggle("active", view === "list");
+  document.getElementById("pw-toggle-rca-btn").classList.toggle("active",  view === "rca");
 }
 
 /* ======================================================
    RCA LIBRARY TABLE (toggled by hamburger)
    ====================================================== */
 function toggleRcaLibrary() {
-  var section = document.getElementById("pw-rca-section");
-  if (section.style.display !== "none") {
-    section.style.display = "none";
+  if (document.getElementById("pw-rca-section").style.display === "block") {
+    showView("form");
   } else {
-    section.style.display = "block";
+    showView("rca");
     renderRcaLibrary();
   }
 }
