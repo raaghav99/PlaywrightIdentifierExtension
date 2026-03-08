@@ -241,6 +241,7 @@ if (isPlaywrightReport()) {
 
     injectPanel();          /* ui.js */
     applyPanelPosition();   /* ui.js */
+    initTheme();            /* form.js — apply saved/system theme before paint */
     attachListeners();      /* form.js */
     listenForTestClicks();  /* form.js */
     setupDragResize();      /* ui.js */

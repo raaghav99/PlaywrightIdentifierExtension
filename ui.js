@@ -20,8 +20,9 @@ function injectPanel() {
   h.push('</div>');
   h.push('<div id="pw-header-actions">');
   h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
-  h.push('<button id="pw-dock-btn" class="pw-icon-btn" title="Switch Side">&#9664;</button>');
-  h.push('<button id="pw-scrape-btn" class="pw-icon-btn" title="Re-scrape tests">&#8635;</button>');
+  h.push('<button id="pw-theme-btn" class="pw-icon-btn pw-icon-theme" title="Toggle dark/light mode">&#9790;</button>');
+  h.push('<button id="pw-dock-btn" class="pw-icon-btn pw-icon-dock" title="Switch Side">&#9664;</button>');
+  h.push('<button id="pw-scrape-btn" class="pw-icon-btn pw-icon-scrape" title="Re-scrape tests">&#8635;</button>');
   h.push('<button id="pw-download-btn" class="pw-icon-btn pw-icon-green" title="Download Excel">&#8595;</button>');
   h.push('</div>');
   h.push('</div>');

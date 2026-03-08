@@ -173,18 +173,61 @@
   opacity: 0.4;
   cursor: default;
 }
+/* Download — green pill */
 .pw-icon-btn.pw-icon-green {
-  color: #16a34a;
+  color: #15803d;
+  background: rgba(22,163,74,0.12);
+  border: 1px solid rgba(22,163,74,0.25);
 }
 .pw-icon-btn.pw-icon-green:hover {
-  background: #f0fdf4;
-  color: #15803d;
+  background: rgba(22,163,74,0.22);
+  color: #14532d;
+  border-color: rgba(22,163,74,0.45);
 }
+
+/* Scrape — blue pill */
+.pw-icon-btn.pw-icon-scrape {
+  color: var(--pw-primary);
+  background: rgba(37,99,235,0.1);
+  border: 1px solid rgba(37,99,235,0.2);
+}
+.pw-icon-btn.pw-icon-scrape:hover {
+  background: rgba(37,99,235,0.2);
+  border-color: rgba(37,99,235,0.4);
+}
+
+/* Dock — neutral pill */
+.pw-icon-btn.pw-icon-dock {
+  color: var(--pw-text-2);
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border);
+}
+.pw-icon-btn.pw-icon-dock:hover {
+  background: var(--pw-border);
+  color: var(--pw-text);
+}
+
+/* Theme toggle — indigo/violet pill */
+.pw-icon-btn.pw-icon-theme {
+  color: #7c3aed;
+  background: rgba(124,58,237,0.1);
+  border: 1px solid rgba(124,58,237,0.22);
+  font-size: 12px;
+}
+.pw-icon-btn.pw-icon-theme:hover {
+  background: rgba(124,58,237,0.2);
+  border-color: rgba(124,58,237,0.4);
+}
+
+/* Danger (delete-all in saved view) */
 .pw-icon-btn.pw-icon-danger {
   color: var(--pw-danger);
+  background: rgba(220,38,38,0.08);
+  border: 1px solid rgba(220,38,38,0.18);
 }
 .pw-icon-btn.pw-icon-danger:hover {
   background: var(--pw-danger-bg);
+  border-color: var(--pw-danger-bdr);
 }
 
 /* Spinner inside header */
@@ -927,6 +970,50 @@ html.dark #pw-page-toggle {
   box-shadow: -2px 0 8px rgba(137,180,250,0.25);
 }
 
+/* Dark: recolor the header pills to work on dark bg */
+html.dark .pw-icon-btn.pw-icon-green {
+  color: #86efac;
+  background: rgba(134,239,172,0.1);
+  border-color: rgba(134,239,172,0.22);
+}
+html.dark .pw-icon-btn.pw-icon-green:hover {
+  background: rgba(134,239,172,0.2);
+  border-color: rgba(134,239,172,0.4);
+  color: #bbf7d0;
+}
+html.dark .pw-icon-btn.pw-icon-scrape {
+  color: #89b4fa;
+  background: rgba(137,180,250,0.1);
+  border-color: rgba(137,180,250,0.22);
+}
+html.dark .pw-icon-btn.pw-icon-scrape:hover {
+  background: rgba(137,180,250,0.2);
+  border-color: rgba(137,180,250,0.4);
+}
+html.dark .pw-icon-btn.pw-icon-dock {
+  color: #a6adc8;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+}
+html.dark .pw-icon-btn.pw-icon-dock:hover {
+  background: rgba(255,255,255,0.12);
+  color: #cdd6f4;
+}
+html.dark .pw-icon-btn.pw-icon-theme {
+  color: #cba6f7;
+  background: rgba(203,166,247,0.1);
+  border-color: rgba(203,166,247,0.22);
+}
+html.dark .pw-icon-btn.pw-icon-theme:hover {
+  background: rgba(203,166,247,0.2);
+  border-color: rgba(203,166,247,0.4);
+}
+html.dark .pw-icon-btn.pw-icon-danger {
+  color: #f38ba8;
+  background: rgba(243,139,168,0.1);
+  border-color: rgba(243,139,168,0.22);
+}
+
 /* — via system prefers-color-scheme (non-Playwright contexts) — */
 @media (prefers-color-scheme: dark) {
   html:not(.dark) #pw-ext-panel {
@@ -958,5 +1045,20 @@ html.dark #pw-page-toggle {
   html:not(.dark) .pw-label-chip:hover { background: #243f6a; }
   html:not(.dark) #pw-page-toggle {
     box-shadow: -2px 0 8px rgba(137,180,250,0.25);
+  }
+  html:not(.dark) .pw-icon-btn.pw-icon-green {
+    color: #86efac; background: rgba(134,239,172,0.1); border-color: rgba(134,239,172,0.22);
+  }
+  html:not(.dark) .pw-icon-btn.pw-icon-scrape {
+    color: #89b4fa; background: rgba(137,180,250,0.1); border-color: rgba(137,180,250,0.22);
+  }
+  html:not(.dark) .pw-icon-btn.pw-icon-dock {
+    color: #a6adc8; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);
+  }
+  html:not(.dark) .pw-icon-btn.pw-icon-theme {
+    color: #cba6f7; background: rgba(203,166,247,0.1); border-color: rgba(203,166,247,0.22);
+  }
+  html:not(.dark) .pw-icon-btn.pw-icon-danger {
+    color: #f38ba8; background: rgba(243,139,168,0.1); border-color: rgba(243,139,168,0.22);
   }
 }

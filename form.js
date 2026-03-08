@@ -10,6 +10,28 @@
  *             applyPanelPosition, extractRowData, getReportUrl, getReport, saveReport
  *             from content.js / ui.js */
 
+/* ======================================================
+   THEME (dark / light toggle)
+   ====================================================== */
+function applyTheme(dark) {
+  if (dark) {
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
+  var btn = document.getElementById("pw-theme-btn");
+  if (btn) btn.innerHTML = dark ? "&#9728;" : "&#9790;"; /* sun / moon */
+  try { localStorage.setItem("pw-theme", dark ? "dark" : "light"); } catch(e) {}
+}
+
+function initTheme() {
+  var saved = "";
+  try { saved = localStorage.getItem("pw-theme") || ""; } catch(e) {}
+  var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark = saved ? saved === "dark" : prefersDark;
+  applyTheme(dark);
+}
+
 function todayIso() {
   var t = new Date();
   return t.getFullYear() + "-" +
@@ -79,6 +101,9 @@ function attachListeners() {
   });
 
   document.getElementById("pw-page-toggle").addEventListener("click", toggleMinimize);
+  document.getElementById("pw-theme-btn").addEventListener("click", function () {
+    applyTheme(!document.documentElement.classList.contains("dark"));
+  });
 
   /* Keyboard — Enter in label field saves */
   document.getElementById("pw-label").addEventListener("keydown", function (e) {
