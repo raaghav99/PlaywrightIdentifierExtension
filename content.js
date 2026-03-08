@@ -176,13 +176,14 @@ if (isPlaywrightReport()) {
 
   /* ── Panel state ── */
   var state = {
-    side:       "right",
-    width:      340,
-    minimized:  false,
-    formHidden: false,
-    editingKey: null,
-    lastUrl:    location.href,
-    scraping:   false
+    side:              "right",
+    width:             340,
+    minimized:         false,
+    formHidden:        false,
+    editingKey:        null,
+    lastUrl:           location.href,
+    scraping:          false,
+    listenersAttached: false
   };
 
   /* ── Scrape all tests on page ── */
@@ -236,34 +237,38 @@ if (isPlaywrightReport()) {
     /* Cleanup old storage keys from v4/v5.0 */
     chrome.storage.local.remove(["pw_entries", "pw_scraped", "pw_label_history", "pw_current_report"]);
 
-    /* Purge reports older than 10 days */
-    purgeOldReports();
-
+    /* UI setup — all synchronous DOM/CSS, no storage reads, runs immediately */
     injectPanel();          /* ui.js */
     applyPanelPosition();   /* ui.js */
     initTheme();            /* form.js — apply saved/system theme before paint */
-    attachListeners();      /* form.js */
-    listenForTestClicks();  /* form.js */
+    attachListeners();      /* form.js — panel-specific, must re-run every rebuild */
     setupDragResize();      /* ui.js */
-    setupUrlWatcher();      /* form.js */
+    if (!state.listenersAttached) {
+      listenForTestClicks();  /* form.js — global document listener, only once */
+      setupUrlWatcher();      /* form.js — interval + global keydown, only once */
+      state.listenersAttached = true;
+    }
     refreshCount();         /* form.js */
     renderLabelChips();     /* form.js */
 
-    /* Only auto-scrape if this report has no saved scraped data */
-    getReport(function (report) {
-      if (report.scraped && report.scraped.length) {
-        /* Existing report: touch lastAccessed, skip scrape */
-        saveReport(report);
-        updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
-      } else {
-        /* New report: scrape */
-        updateStatusBar(0, 0, false);
-        scrapeAllTests(function (count) {
-          getReport(function (r) {
-            updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+    /* Purge old reports first, then read storage — guarantees purge wins */
+    purgeOldReports(function () {
+      /* Only auto-scrape if this report has no saved scraped data */
+      getReport(function (report) {
+        if (report.scraped && report.scraped.length) {
+          /* Existing report: touch lastAccessed, skip scrape */
+          saveReport(report);
+          updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+        } else {
+          /* New report: scrape */
+          updateStatusBar(0, 0, false);
+          scrapeAllTests(function (count) {
+            getReport(function (r) {
+              updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+            });
           });
-        });
-      }
+        }
+      });
     });
   }
 

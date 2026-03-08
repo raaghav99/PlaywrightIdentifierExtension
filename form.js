@@ -178,6 +178,7 @@ function listenForTestClicks() {
    URL WATCHER
    ====================================================== */
 function setupUrlWatcher() {
+  if (state.urlWatchInterval) clearInterval(state.urlWatchInterval);
   state.urlWatchInterval = setInterval(function () {
     if (location.href !== state.lastUrl) {
       state.lastUrl = location.href;
