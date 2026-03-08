@@ -212,11 +212,26 @@
   color: #7c3aed;
   background: rgba(124,58,237,0.1);
   border: 1px solid rgba(124,58,237,0.22);
-  font-size: 12px;
+  font-size: 11px;
+  width: auto;
+  padding: 0 7px;
+  gap: 3px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 .pw-icon-btn.pw-icon-theme:hover {
   background: rgba(124,58,237,0.2);
   border-color: rgba(124,58,237,0.4);
+}
+/* Active = dark mode ON: solid filled highlight */
+.pw-icon-btn.pw-icon-theme.pw-theme-active {
+  color: #fff;
+  background: #7c3aed;
+  border-color: #6d28d9;
+}
+.pw-icon-btn.pw-icon-theme.pw-theme-active:hover {
+  background: #6d28d9;
+  border-color: #5b21b6;
 }
 
 /* Danger (delete-all in saved view) */
@@ -1007,55 +1022,48 @@
   background: rgba(203,166,247,0.2);
   border-color: rgba(203,166,247,0.4);
 }
+/* Active state in dark mode: solid filled */
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-theme.pw-theme-active {
+  color: #1e1e2e;
+  background: #cba6f7;
+  border-color: #b492f0;
+}
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-theme.pw-theme-active:hover {
+  background: #b492f0;
+  border-color: #a07de0;
+}
 :is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-danger {
   color: #f38ba8;
   background: rgba(243,139,168,0.1);
   border-color: rgba(243,139,168,0.22);
 }
 
-/* — system prefers-color-scheme fallback (when neither dark class is present) — */
-@media (prefers-color-scheme: dark) {
-  html:not(.dark):not(.pw-dark) #pw-ext-panel {
-    --pw-bg:           #1e1e2e;
-    --pw-surface:      #181825;
-    --pw-border:       #313244;
-    --pw-border-focus: #89b4fa;
-    --pw-primary:      #89b4fa;
-    --pw-primary-hover:#b4d0fb;
-    --pw-text:         #cdd6f4;
-    --pw-text-2:       #a6adc8;
-    --pw-text-3:       #6c7086;
-    --pw-success-bg:   #1a2e1d;
-    --pw-success-text: #a6e3a1;
-    --pw-success-bdr:  #2a4a2d;
-    --pw-warn-bg:      #2a2215;
-    --pw-warn-text:    #f9e2af;
-    --pw-warn-bdr:     #3d3218;
-    --pw-danger:       #f38ba8;
-    --pw-danger-bg:    #2d1b22;
-    --pw-danger-bdr:   #4a2030;
-    box-shadow: -2px 0 20px rgba(0,0,0,0.45);
-  }
-  html:not(.dark):not(.pw-dark) .pw-label-chip {
-    background: #1e3358; border-color: #2d5080; color: #89b4fa;
-  }
-  html:not(.dark):not(.pw-dark) .pw-label-chip:hover { background: #243f6a; }
-  html:not(.dark):not(.pw-dark) #pw-page-toggle {
-    box-shadow: -2px 0 8px rgba(137,180,250,0.25);
-  }
-  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-green {
-    color: #86efac; background: rgba(134,239,172,0.1); border-color: rgba(134,239,172,0.22);
-  }
-  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-scrape {
-    color: #89b4fa; background: rgba(137,180,250,0.1); border-color: rgba(137,180,250,0.22);
-  }
-  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-dock {
-    color: #a6adc8; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);
-  }
-  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-theme {
-    color: #cba6f7; background: rgba(203,166,247,0.1); border-color: rgba(203,166,247,0.22);
-  }
-  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-danger {
-    color: #f38ba8; background: rgba(243,139,168,0.1); border-color: rgba(243,139,168,0.22);
-  }
+/* prefers-color-scheme handled by initTheme() in JS, which sets html.pw-dark.
+   A CSS-only media query fallback here would fight the toggle button. */
+
+/* Date inputs: force dark color-scheme so browser renders native widget with light text */
+:is(html.dark, html.pw-dark) .pw-date-input {
+  color-scheme: dark;
+  color: var(--pw-text);
+  background: var(--pw-surface);
+}
+
+/* Save button: keep solid blue in dark mode (primary token is too pale for a bg) */
+:is(html.dark, html.pw-dark) #pw-save-btn {
+  background: #3b82f6;
+  color: #fff;
+}
+:is(html.dark, html.pw-dark) #pw-save-btn:hover {
+  background: #2563eb;
+}
+
+/* Scrape button: more solid in dark mode */
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-scrape {
+  color: #fff;
+  background: rgba(59,130,246,0.5);
+  border-color: rgba(59,130,246,0.7);
+}
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-scrape:hover {
+  background: rgba(59,130,246,0.7);
+  border-color: rgba(59,130,246,0.9);
 }

@@ -20,8 +20,12 @@ function applyTheme(dark) {
   } else {
     document.documentElement.classList.remove("pw-dark");
   }
-  var btn = document.getElementById("pw-theme-btn");
-  if (btn) btn.innerHTML = dark ? "&#9728;" : "&#9790;"; /* sun / moon */
+  var btn       = document.getElementById("pw-theme-btn");
+  var iconEl    = document.getElementById("pw-theme-icon");
+  var labelEl   = document.getElementById("pw-theme-label");
+  if (btn)     btn.classList.toggle("pw-theme-active", dark);
+  if (iconEl)  iconEl.innerHTML  = dark ? "&#9728;" : "&#9790;"; /* sun / moon */
+  if (labelEl) labelEl.textContent = dark ? "Light" : "Dark";
   try { localStorage.setItem("pw-theme", dark ? "dark" : "light"); } catch(e) {}
 }
 
