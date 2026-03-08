@@ -10,33 +10,52 @@ function injectPanel() {
   panel.id = "pw-ext-panel";
   var h = [];
 
-  /* Toolbar */
-  h.push('<div id="pw-toolbar">');
-  h.push('<button id="pw-dock-btn" class="pw-tb-btn" title="Switch Side">&#9664;</button>');
-  h.push('<button id="pw-toggle-rca-btn" class="pw-tb-btn" title="RCA Library">&#9776;</button>');
-  h.push('<button id="pw-toggle-list-btn" class="pw-tb-btn pw-tb-text-btn" title="View Saved Entries">Saved (0)</button>');
+  /* ── Header ── */
+  h.push('<div id="pw-header">');
+  h.push('<div id="pw-header-brand">');
+  h.push('<div id="pw-header-logo">');
+  h.push('<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>');
+  h.push('</div>');
+  h.push('<span id="pw-header-title">Test Identifier</span>');
+  h.push('</div>');
+  h.push('<div id="pw-header-actions">');
   h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');
-  h.push('<button id="pw-scrape-btn" class="pw-tb-btn pw-tb-text-btn" title="Re-scrape tests">&#8635;</button>');
-  h.push('<button id="pw-download-btn" class="pw-tb-btn pw-tb-text-btn pw-tb-green" title="Download Excel">&#8595; Excel</button>');
-  h.push('<button id="pw-delete-all-btn" class="pw-tb-btn pw-tb-danger" title="Delete Report Labels">&#128465;</button>');
+  h.push('<button id="pw-dock-btn" class="pw-icon-btn" title="Switch Side">&#9664;</button>');
+  h.push('<button id="pw-scrape-btn" class="pw-icon-btn" title="Re-scrape tests">&#8635;</button>');
+  h.push('<button id="pw-download-btn" class="pw-icon-btn pw-icon-green" title="Download Excel">&#8595;</button>');
+  h.push('</div>');
   h.push('</div>');
 
-  /* Header */
-  h.push('<div id="pw-panel-header">');
-  h.push('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>');
-  h.push('<span>Test Identifier</span>');
+  /* ── Tabs ── */
+  h.push('<div id="pw-tabs">');
+  h.push('<button id="pw-tab-form" class="pw-tab active" data-view="form">Form</button>');
+  h.push('<button id="pw-tab-list" class="pw-tab" data-view="list">Saved <span id="pw-saved-badge" class="pw-tab-badge">0</span></button>');
+  h.push('<button id="pw-tab-rca" class="pw-tab" data-view="rca">Library</button>');
   h.push('</div>');
 
-  /* Status bar */
+  /* ── Status Bar ── */
   h.push('<div id="pw-status-bar"><span id="pw-status-text">Loading\u2026</span></div>');
 
-  /* Form */
+  /* ── Form Section ── */
   h.push('<div id="pw-form-section">');
-  h.push('<div class="pw-field"><label>SC</label><input id="pw-sc" readonly placeholder="(click a test)" /></div>');
-  h.push('<div class="pw-field"><label>Name</label><input id="pw-name" readonly placeholder="..." /></div>');
-  h.push('<div class="pw-field"><label>Result</label><span id="pw-result-badge" class="pw-result-display"></span><input id="pw-result" type="hidden" /></div>');
 
-  /* Label + Copy from */
+  /* Test info card */
+  h.push('<div id="pw-test-info-card">');
+  h.push('<div id="pw-test-info-empty">&#8592; Click a test to begin</div>');
+  h.push('<div id="pw-test-info-filled">');
+  h.push('<div id="pw-test-info-top">');
+  h.push('<span id="pw-test-sc"></span>');
+  h.push('<span id="pw-test-name"></span>');
+  h.push('</div>');
+  h.push('<span id="pw-result-badge" class="pw-result-display"></span>');
+  h.push('<input id="pw-result" type="hidden" />');
+  h.push('</div>');
+  h.push('</div>');
+
+  /* Editable fields */
+  h.push('<div id="pw-fields-area">');
+
+  /* Label */
   h.push('<div class="pw-field pw-field-input">');
   h.push('<div class="pw-label-header"><label>Label</label><button id="pw-copy-from-btn" class="pw-copy-from-trigger" type="button">Copy from\u2026</button></div>');
   h.push('<input id="pw-label" placeholder="e.g. Login timeout issue" autocomplete="off" />');
@@ -45,36 +64,48 @@ function injectPanel() {
   h.push('<div id="pw-label-chips"></div>');
   h.push('</div>');
 
+  /* Category */
   h.push('<div class="pw-field pw-field-input"><label>Category</label><input id="pw-category" placeholder="e.g. Functional Bug" autocomplete="off" /><div id="pw-suggest-category" class="pw-autocomplete-list"></div></div>');
+
+  /* Owner */
   h.push('<div class="pw-field pw-field-input"><label>Owner</label><input id="pw-owner" placeholder="e.g. Frontend Team" autocomplete="off" /><div id="pw-suggest-owner" class="pw-autocomplete-list"></div></div>');
+
+  /* Jira */
   h.push('<div class="pw-field pw-field-input"><label>Jira</label><input id="pw-jira" placeholder="e.g. PROJ-123" autocomplete="off" /><div id="pw-suggest-jira" class="pw-autocomplete-list"></div></div>');
-  h.push('<div class="pw-form-buttons">');
-  h.push('<input type="date" id="pw-label-date" class="pw-date-input" title="Entry date (DD/MM)" />');
-  h.push('<button id="pw-save-btn">Save Entry</button>');
+
+  h.push('</div>'); /* /pw-fields-area */
+
+  /* Form action bar */
+  h.push('<div id="pw-form-actions">');
+  h.push('<input type="date" id="pw-label-date" class="pw-date-input" title="Entry date" />');
+  h.push('<button id="pw-save-btn">Save</button>');
   h.push('<button id="pw-delete-current-btn" class="pw-btn-danger" style="display:none">Delete</button>');
   h.push('</div>');
-  h.push('</div>');
 
-  /* Saved list (current report labels) */
-  h.push('<div id="pw-list-section" style="display:none">');
-  h.push('<div class="pw-view-hint">&#8617; Click <strong>Saved</strong> again to return to form</div>');
+  h.push('</div>'); /* /pw-form-section */
+
+  /* ── Saved List Section ── */
+  h.push('<div id="pw-list-section">');
+  h.push('<div id="pw-list-toolbar">');
   h.push('<div id="pw-date-filter-bar">');
   h.push('<label class="pw-date-filter-label"><input type="checkbox" id="pw-date-filter-check"> Filter by date</label>');
   h.push('<input type="date" id="pw-date-filter-input" style="display:none" />');
   h.push('</div>');
-  h.push('<div id="pw-list-container"></div></div>');
+  h.push('<button id="pw-delete-all-btn" class="pw-icon-btn pw-icon-danger" title="Delete all labels">&#128465;</button>');
+  h.push('</div>');
+  h.push('<div id="pw-list-container"></div>');
+  h.push('</div>');
 
-  /* RCA Library (hidden by default, toggled by hamburger) */
-  h.push('<div id="pw-rca-section" style="display:none">');
-  h.push('<div class="pw-view-hint">&#8617; Click <strong>&#9776; RCA</strong> again to return to form</div>');
-  h.push('<div class="pw-rca-header">');
-  h.push('<span>RCA Library</span>');
-  h.push('<span id="pw-rca-count" class="pw-rca-count"></span>');
+  /* ── RCA Library Section ── */
+  h.push('<div id="pw-rca-section">');
+  h.push('<div id="pw-rca-toolbar">');
+  h.push('<span id="pw-rca-title">RCA Library</span>');
+  h.push('<span id="pw-rca-count"></span>');
   h.push('</div>');
   h.push('<div id="pw-rca-container"></div>');
   h.push('</div>');
 
-  /* Resize handle */
+  /* ── Resize handle ── */
   h.push('<div id="pw-resize-handle"></div>');
 
   panel.innerHTML = h.join("");
@@ -83,7 +114,7 @@ function injectPanel() {
   var toggle = document.createElement("div");
   toggle.id = "pw-page-toggle";
   toggle.title = "Show / Hide Test Identifier";
-  toggle.innerHTML = '&#9664;';
+  toggle.innerHTML = "&#9664;";
   document.body.appendChild(toggle);
 
   var toast = document.createElement("div");

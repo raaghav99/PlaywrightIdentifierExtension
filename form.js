@@ -28,13 +28,41 @@ function isoToDdMm(isoDate) {
    LISTENERS
    ====================================================== */
 function attachListeners() {
+  /* Tab navigation */
+  document.getElementById("pw-tab-form").addEventListener("click", function () { showView("form"); });
+  document.getElementById("pw-tab-list").addEventListener("click", function () {
+    if (document.getElementById("pw-list-section").style.display === "flex") {
+      showView("form");
+    } else {
+      showView("list");
+      getReport(function (r) { renderList(r); });
+    }
+  });
+  document.getElementById("pw-tab-rca").addEventListener("click", function () {
+    if (document.getElementById("pw-rca-section").style.display === "flex") {
+      showView("form");
+    } else {
+      showView("rca");
+      renderRcaLibrary();
+    }
+  });
+
+  /* Form actions */
   document.getElementById("pw-save-btn").addEventListener("click", saveEntry);
-  document.getElementById("pw-toggle-list-btn").addEventListener("click", toggleList);
-  document.getElementById("pw-download-btn").addEventListener("click", downloadExcel);  /* excel.js */
+  document.getElementById("pw-delete-current-btn").addEventListener("click", deleteCurrentEntry);
+  document.getElementById("pw-delete-all-btn").addEventListener("click", deleteAllEntries);
+  document.getElementById("pw-copy-from-btn").addEventListener("click", toggleCopyFromDropdown);
+
+  /* Header actions */
+  document.getElementById("pw-download-btn").addEventListener("click", downloadExcel);
+  document.getElementById("pw-dock-btn").addEventListener("click", function () {
+    state.side = state.side === "right" ? "left" : "right";
+    applyPanelPosition();
+  });
   document.getElementById("pw-scrape-btn").addEventListener("click", function () {
-    var btn      = document.getElementById("pw-scrape-btn");
-    var spinner  = document.getElementById("pw-scrape-spinner");
-    var dlBtn    = document.getElementById("pw-download-btn");
+    var btn     = document.getElementById("pw-scrape-btn");
+    var spinner = document.getElementById("pw-scrape-spinner");
+    var dlBtn   = document.getElementById("pw-download-btn");
     btn.disabled = true;
     dlBtn.disabled = true;
     spinner.style.display = "inline-block";
@@ -49,24 +77,13 @@ function attachListeners() {
       showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
     });
   });
-  document.getElementById("pw-dock-btn").addEventListener("click", function () {
-    state.side = state.side === "right" ? "left" : "right";
-    applyPanelPosition();
-  });
+
   document.getElementById("pw-page-toggle").addEventListener("click", toggleMinimize);
-  document.getElementById("pw-toggle-rca-btn").addEventListener("click", toggleRcaLibrary);
+
+  /* Keyboard — Enter in label field saves */
   document.getElementById("pw-label").addEventListener("keydown", function (e) {
     if (e.key === "Enter") saveEntry();
   });
-
-  /* Delete current entry button */
-  document.getElementById("pw-delete-current-btn").addEventListener("click", deleteCurrentEntry);
-
-  /* Delete All button */
-  document.getElementById("pw-delete-all-btn").addEventListener("click", deleteAllEntries);
-
-  /* Copy-from button */
-  document.getElementById("pw-copy-from-btn").addEventListener("click", toggleCopyFromDropdown);
 
   /* Initialise date picker to today */
   document.getElementById("pw-label-date").value = todayIso();
@@ -91,12 +108,12 @@ function attachListeners() {
     getReport(function (r) { renderList(r); });
   });
 
-  /* Prevent keystrokes inside panel from reaching Playwright's scroll handlers */
+  /* Stop Playwright keyboard handlers from firing inside panel */
   var panel = document.getElementById("pw-ext-panel");
-  panel.addEventListener("keydown", function (e) { e.stopPropagation(); }, true);
+  panel.addEventListener("keydown",  function (e) { e.stopPropagation(); }, true);
   panel.addEventListener("keypress", function (e) { e.stopPropagation(); }, true);
 
-  /* Autocomplete for fields */
+  /* Autocomplete */
   ["label", "category", "owner", "jira"].forEach(function (field) {
     var input = document.getElementById("pw-" + field);
     var list  = document.getElementById("pw-suggest-" + field);
@@ -263,22 +280,28 @@ function toggleCopyFromDropdown() {
 function populateForm(row) {
   var data = extractRowData(row);
 
-  document.getElementById("pw-sc").value     = data.sc;
-  document.getElementById("pw-name").value   = data.name;
+  /* Populate hidden result input */
   document.getElementById("pw-result").value = data.result;
-  updateResultBadge(data.result);
 
+  /* Update test info card */
+  document.getElementById("pw-test-sc").textContent   = data.sc;
+  document.getElementById("pw-test-name").textContent = data.name;
+  updateResultBadge(data.result);
+  document.getElementById("pw-test-info-empty").style.display  = "none";
+  document.getElementById("pw-test-info-filled").style.display = "block";
+
+  /* Clear editable fields */
   ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
     document.getElementById(id).value = "";
     document.getElementById(id).classList.remove("pw-error");
   });
 
   state.editingKey = null;
-  document.getElementById("pw-save-btn").textContent            = "Save Entry";
+  document.getElementById("pw-save-btn").textContent             = "Save";
   document.getElementById("pw-delete-current-btn").style.display = "none";
   document.getElementById("pw-copy-from-dropdown").style.display = "none";
 
-  /* Check if this test already has a label in current report */
+  /* Check if this test already has a label */
   var key = data.sc + "|" + data.name;
   getReport(function (report) {
     var existing = report.labels[key];
@@ -287,7 +310,6 @@ function populateForm(row) {
       document.getElementById("pw-category").value = existing.category || "";
       document.getElementById("pw-owner").value    = existing.owner || "";
       document.getElementById("pw-jira").value     = existing.jira || "";
-      /* Restore saved date or fall back to today */
       var savedDdMm = existing.labelDate || "";
       if (savedDdMm && /^\d{2}\/\d{2}$/.test(savedDdMm)) {
         var year = new Date().getFullYear();
@@ -297,13 +319,14 @@ function populateForm(row) {
         document.getElementById("pw-label-date").value = todayIso();
       }
       state.editingKey = key;
-      document.getElementById("pw-save-btn").textContent              = "Update Entry";
+      document.getElementById("pw-save-btn").textContent             = "Update";
       document.getElementById("pw-delete-current-btn").style.display = "";
     }
   });
 
   document.getElementById("pw-label").focus();
   if (state.minimized) toggleMinimize();
+  showView("form");
 }
 
 function updateResultBadge(result) {
@@ -455,15 +478,6 @@ function saveEntry() {
 /* ======================================================
    SAVED LIST (current report labels)
    ====================================================== */
-function toggleList() {
-  if (document.getElementById("pw-list-section").style.display === "block") {
-    showView("form");
-  } else {
-    showView("list");
-    getReport(function (report) { renderList(report); });
-  }
-}
-
 function renderList(report) {
   var container = document.getElementById("pw-list-container");
   var labels    = report.labels || {};
@@ -594,12 +608,12 @@ function renderLabelChips() {
 
 function refreshCount(n) {
   if (typeof n === "number") {
-    document.getElementById("pw-toggle-list-btn").textContent = "Saved (" + n + ")";
+    document.getElementById("pw-saved-badge").textContent = n;
     return;
   }
   getReport(function (report) {
     var count = Object.keys(report.labels).length;
-    document.getElementById("pw-toggle-list-btn").textContent = "Saved (" + count + ")";
+    document.getElementById("pw-saved-badge").textContent = count;
   });
 }
 
@@ -607,25 +621,17 @@ function refreshCount(n) {
    VIEW SWITCHER
    ====================================================== */
 function showView(view) {
-  document.getElementById("pw-form-section").style.display  = view === "form" ? "flex" : "none";
-  document.getElementById("pw-list-section").style.display  = view === "list" ? "block" : "none";
-  document.getElementById("pw-rca-section").style.display   = view === "rca"  ? "block" : "none";
-  document.getElementById("pw-toggle-list-btn").classList.toggle("active", view === "list");
-  document.getElementById("pw-toggle-rca-btn").classList.toggle("active",  view === "rca");
+  document.getElementById("pw-form-section").style.display = view === "form" ? "flex" : "none";
+  document.getElementById("pw-list-section").style.display = view === "list" ? "flex" : "none";
+  document.getElementById("pw-rca-section").style.display  = view === "rca"  ? "flex" : "none";
+  document.getElementById("pw-tab-form").classList.toggle("active", view === "form");
+  document.getElementById("pw-tab-list").classList.toggle("active", view === "list");
+  document.getElementById("pw-tab-rca").classList.toggle("active",  view === "rca");
 }
 
 /* ======================================================
-   RCA LIBRARY TABLE (toggled by hamburger)
+   RCA LIBRARY TABLE
    ====================================================== */
-function toggleRcaLibrary() {
-  if (document.getElementById("pw-rca-section").style.display === "block") {
-    showView("form");
-  } else {
-    showView("rca");
-    renderRcaLibrary();
-  }
-}
-
 function renderRcaLibrary() {
   var container = document.getElementById("pw-rca-container");
   var countEl   = document.getElementById("pw-rca-count");
@@ -635,41 +641,41 @@ function renderRcaLibrary() {
       return (b.useCount || 0) - (a.useCount || 0);
     });
 
-    if (countEl) countEl.textContent = "(" + library.length + ")";
+    if (countEl) countEl.textContent = library.length + " entries";
 
     if (!library.length) {
       container.innerHTML = '<div class="pw-list-empty">RCA library is empty.<br>Save entries to build it.</div>';
       return;
     }
 
-    var html = ['<table class="pw-rca-table"><thead><tr>',
-      '<th>Label</th><th>Category</th><th>Owner</th><th>Jira</th><th>Used</th><th></th>',
-      '</tr></thead><tbody>'];
-
+    var html = [];
     library.forEach(function (e) {
-      html.push('<tr class="pw-rca-row" data-id="' + esc(e.id) + '">');
-      html.push('<td>' + esc(e.label) + '</td>');
-      html.push('<td>' + esc(e.category || "") + '</td>');
-      html.push('<td>' + esc(e.owner || "") + '</td>');
-      html.push('<td>' + esc(e.jira || "") + '</td>');
-      html.push('<td>' + (e.useCount || 1) + 'x</td>');
-      html.push('<td><button class="pw-rca-delete-btn" data-id="' + esc(e.id) + '" title="Delete">\u00d7</button></td>');
-      html.push('</tr>');
+      var meta = [e.category, e.owner, e.jira].filter(Boolean).join(" \u00b7 ");
+      html.push(
+        '<div class="pw-rca-card" data-id="' + esc(e.id) + '">' +
+        '<div class="pw-rca-card-label">' + esc(e.label) + '</div>' +
+        (meta ? '<div class="pw-rca-card-meta">' + esc(meta) + '</div>' : '') +
+        '<div class="pw-rca-card-actions">' +
+        '<span class="pw-rca-use-count">' + (e.useCount || 1) + 'x</span>' +
+        '<button class="pw-rca-delete-btn" data-id="' + esc(e.id) + '" title="Delete">\u00d7</button>' +
+        '</div>' +
+        '</div>'
+      );
     });
 
-    html.push('</tbody></table>');
     container.innerHTML = html.join("");
 
-    container.querySelectorAll(".pw-rca-row").forEach(function (row) {
-      row.addEventListener("click", function (ev) {
+    container.querySelectorAll(".pw-rca-card").forEach(function (card) {
+      card.addEventListener("click", function (ev) {
         if (ev.target.classList.contains("pw-rca-delete-btn")) return;
-        var id    = row.dataset.id;
+        var id    = card.dataset.id;
         var entry = library.find(function (e) { return e.id === id; });
         if (entry) {
           document.getElementById("pw-label").value    = entry.label || "";
           document.getElementById("pw-category").value = entry.category || "";
           document.getElementById("pw-owner").value    = entry.owner || "";
           document.getElementById("pw-jira").value     = entry.jira || "";
+          showView("form");
           showToast("RCA copied to form", "success");
         }
       });
