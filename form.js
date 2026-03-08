@@ -321,6 +321,9 @@ function populateForm(row) {
       state.editingKey = key;
       document.getElementById("pw-save-btn").textContent             = "Update";
       document.getElementById("pw-delete-current-btn").style.display = "";
+    } else {
+      /* Fresh test — reset date picker to today */
+      document.getElementById("pw-label-date").value = todayIso();
     }
   });
 
@@ -533,8 +536,9 @@ function renderList(report) {
     var meta = [e.category, e.owner, e.jira].filter(Boolean).join(" \u00b7 ");
     html.push('<div class="pw-entry-card">' +
       '<div class="pw-entry-title">' +
-        '<span class="pw-badge ' + rc + '">' + esc(result) + '</span> ' +
-        '[' + esc(sc) + '] ' + esc(tname) +
+        '<span class="pw-badge ' + rc + '">' + esc(result) + '</span>' +
+        '<span class="pw-entry-sc">' + esc(sc) + '</span>' +
+        '<span class="pw-entry-name">' + esc(tname) + '</span>' +
       '</div>' +
       '<div class="pw-entry-label"><span class="pw-entry-date">' + esc(datePrefix) + '</span>' + esc(e.label || "No label") + '</div>' +
       (meta ? '<div class="pw-entry-meta">' + esc(meta) + '</div>' : '') +

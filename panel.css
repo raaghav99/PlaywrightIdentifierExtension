@@ -885,3 +885,78 @@
 #pw-ext-panel ::-webkit-scrollbar-track  { background: transparent; }
 #pw-ext-panel ::-webkit-scrollbar-thumb  { background: var(--pw-border); border-radius: 4px; }
 #pw-ext-panel ::-webkit-scrollbar-thumb:hover { background: var(--pw-text-3); }
+
+/* ==========================================================
+   DARK MODE
+   Playwright reports set class="dark" on <html> when dark
+   mode is active. We also honour prefers-color-scheme as
+   a fallback for other environments.
+   ========================================================== */
+
+/* — via Playwright dark class — */
+html.dark #pw-ext-panel {
+  --pw-bg:           #1e1e2e;
+  --pw-surface:      #181825;
+  --pw-border:       #313244;
+  --pw-border-focus: #89b4fa;
+  --pw-primary:      #89b4fa;
+  --pw-primary-hover:#b4d0fb;
+  --pw-text:         #cdd6f4;
+  --pw-text-2:       #a6adc8;
+  --pw-text-3:       #6c7086;
+  --pw-success-bg:   #1a2e1d;
+  --pw-success-text: #a6e3a1;
+  --pw-success-bdr:  #2a4a2d;
+  --pw-warn-bg:      #2a2215;
+  --pw-warn-text:    #f9e2af;
+  --pw-warn-bdr:     #3d3218;
+  --pw-danger:       #f38ba8;
+  --pw-danger-bg:    #2d1b22;
+  --pw-danger-bdr:   #4a2030;
+  box-shadow: -2px 0 20px rgba(0,0,0,0.45);
+}
+
+html.dark .pw-label-chip {
+  background: #1e3358;
+  border-color: #2d5080;
+  color: #89b4fa;
+}
+html.dark .pw-label-chip:hover { background: #243f6a; }
+
+html.dark #pw-page-toggle {
+  box-shadow: -2px 0 8px rgba(137,180,250,0.25);
+}
+
+/* — via system prefers-color-scheme (non-Playwright contexts) — */
+@media (prefers-color-scheme: dark) {
+  html:not(.dark) #pw-ext-panel {
+    --pw-bg:           #1e1e2e;
+    --pw-surface:      #181825;
+    --pw-border:       #313244;
+    --pw-border-focus: #89b4fa;
+    --pw-primary:      #89b4fa;
+    --pw-primary-hover:#b4d0fb;
+    --pw-text:         #cdd6f4;
+    --pw-text-2:       #a6adc8;
+    --pw-text-3:       #6c7086;
+    --pw-success-bg:   #1a2e1d;
+    --pw-success-text: #a6e3a1;
+    --pw-success-bdr:  #2a4a2d;
+    --pw-warn-bg:      #2a2215;
+    --pw-warn-text:    #f9e2af;
+    --pw-warn-bdr:     #3d3218;
+    --pw-danger:       #f38ba8;
+    --pw-danger-bg:    #2d1b22;
+    --pw-danger-bdr:   #4a2030;
+    box-shadow: -2px 0 20px rgba(0,0,0,0.45);
+  }
+  html:not(.dark) .pw-label-chip {
+    background: #1e3358;
+    border-color: #2d5080;
+    color: #89b4fa;
+  }
+  html:not(.dark) .pw-label-chip:hover { background: #243f6a; }
+  html:not(.dark) #pw-page-toggle {
+    box-shadow: -2px 0 8px rgba(137,180,250,0.25);
+  }
+}
