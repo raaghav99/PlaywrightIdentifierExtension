@@ -984,6 +984,11 @@
   box-shadow: -2px 0 8px rgba(137,180,250,0.25);
 }
 
+/* Logo box: keep solid blue in dark mode so the white icon stays crisp */
+:is(html.dark, html.pw-dark) #pw-header-logo {
+  background: #2563eb;
+}
+
 /* Dark: header button pills */
 :is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-green {
   color: #86efac;
