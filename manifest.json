@@ -1,22 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Playwright Test Identifier",
-  "version": "3.0.0",
+  "version": "2.0.1",
   "description": "Label and export Playwright test results directly from the HTML report",
   "icons": {
     "48": "icons/icon48.png"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab"],
   "content_scripts": [
     {
       "matches": [
         "file:///*",
         "http://localhost/*",
+        "https://localhost/*",
         "http://127.0.0.1/*",
+        "https://127.0.0.1/*",
         "http://*/html-report/*",
         "https://*/html-report/*"
       ],
-      "js": ["xlsx.min.js", "content.js"],
+      "js": ["xlsx.min.js", "content.js", "ui.js", "form.js", "excel.js"],
       "css": ["panel.css"],
       "run_at": "document_idle",
       "all_frames": false
