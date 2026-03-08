@@ -5,6 +5,47 @@
 /* ======================================================
    PANEL HTML
    ====================================================== */
+
+/**
+ * injectPanel()
+ * -------------
+ * Builds the entire extension panel HTML from scratch and appends it to
+ * document.body. Also creates the slide tab (#pw-page-toggle) and the
+ * toast container (#pw-toast) as separate elements.
+ *
+ * Called once during init(). If the panel is removed from the DOM by a
+ * React re-render, the MutationObserver in listenForTestClicks() will call
+ * init() again, which calls injectPanel() again.
+ *
+ * Panel structure (DOM tree):
+ *   #pw-ext-panel
+ *     #pw-header
+ *       #pw-header-brand  (logo + title)
+ *       #pw-header-actions  (theme btn, dock btn, scrape btn, download btn)
+ *     #pw-tabs  (Form | Saved N | Library)
+ *     #pw-status-bar > #pw-status-text
+ *     #pw-form-section
+ *       #pw-test-info-card  (read-only test context after clicking a row)
+ *         #pw-test-info-empty  (shown until a test is clicked)
+ *         #pw-test-info-filled  (SC + name + result badge)
+ *       #pw-fields-area  (Label, Category, Owner, Jira inputs + autocomplete)
+ *       #pw-form-actions  (date picker + Save + Delete buttons)
+ *     #pw-list-section  (Saved entries list — hidden until tab clicked)
+ *       #pw-list-toolbar  (date filter + delete-all button)
+ *       #pw-list-container  (dynamically filled by renderList())
+ *     #pw-rca-section  (RCA Library — hidden until tab clicked)
+ *       #pw-rca-toolbar
+ *       #pw-rca-container  (dynamically filled by renderRcaLibrary())
+ *     #pw-resize-handle
+ *   #pw-page-toggle  (the slide-in tab on the panel edge)
+ *   #pw-toast  (floating notification)
+ *
+ * NOTE: All three section divs (form/list/rca) are present in DOM at all
+ * times. showView() in form.js toggles their display between flex/none.
+ *
+ * REVIEW: If new input fields are added here, make sure attachListeners()
+ * in form.js is updated to wire them up.
+ */
 function injectPanel() {
   var panel = document.createElement("div");
   panel.id = "pw-ext-panel";
@@ -126,6 +167,32 @@ function injectPanel() {
 /* ======================================================
    POSITION & LAYOUT
    ====================================================== */
+
+/**
+ * applyPanelPosition()
+ * --------------------
+ * Applies the current panel side/width from state to the DOM.
+ * Should be called any time state.side or state.width changes.
+ *
+ * Reads from state:
+ *   state.side      "right"|"left"  — which edge the panel sticks to
+ *   state.width     number (px)     — current panel width
+ *   state.minimized boolean         — if true, page padding is removed
+ *
+ * What it does:
+ *   - Sets panel inline left/right style and adds/removes pw-docked-left class
+ *   - Positions the resize handle on the inner edge of the panel
+ *   - Applies body padding so page content is not hidden behind the panel
+ *     (skipped when minimized — no padding needed when panel is off-screen)
+ *   - Updates the #pw-page-toggle tab position, border-radius, and arrow glyph
+ *   - Updates #pw-dock-btn arrow glyph to show which direction it will move
+ *
+ * Arrow logic for #pw-page-toggle:
+ *   Right panel, not minimized → ▶ (click to hide right)
+ *   Right panel, minimized     → ◀ (click to show from right)
+ *   Left panel, not minimized  → ◁ (click to hide left)
+ *   Left panel, minimized      → ▶ (click to show from left)
+ */
 function applyPanelPosition() {
   var panel   = document.getElementById("pw-ext-panel");
   var handle  = document.getElementById("pw-resize-handle");
@@ -166,6 +233,30 @@ function applyPanelPosition() {
   document.body.style.boxSizing = "border-box";
 }
 
+/**
+ * toggleMinimize()
+ * ----------------
+ * Slides the panel off-screen and removes body padding, or restores it.
+ * Toggled by clicking #pw-page-toggle (the edge tab).
+ *
+ * Reads/writes: state.minimized, state.side
+ *
+ * Minimized state:
+ *   - Adds .pw-minimized to panel (CSS translateX slides it off-screen)
+ *   - For left-docked panels also adds .pw-docked-left to ensure correct
+ *     slide direction (translateX negative = slide left)
+ *   - Removes body padding (panel is no longer occupying space)
+ *   - Moves the toggle tab to the screen edge (right:0 or left:0)
+ *   - Updates arrow glyph to show "expand" direction
+ *
+ * Restored state:
+ *   - Removes .pw-minimized and .pw-docked-left (applyPanelPosition re-adds
+ *     pw-docked-left if needed)
+ *   - Calls applyPanelPosition() to restore full layout
+ *
+ * NOTE: .pw-docked-left is removed then re-added by applyPanelPosition() on
+ * restore — the brief remove is harmless but slightly redundant.
+ */
 function toggleMinimize() {
   var panel = document.getElementById("pw-ext-panel");
   var tab   = document.getElementById("pw-page-toggle");
@@ -196,6 +287,29 @@ function toggleMinimize() {
 /* ======================================================
    DRAG & RESIZE
    ====================================================== */
+
+/**
+ * setupDragResize()
+ * -----------------
+ * Attaches mousedown → mousemove → mouseup drag logic to the
+ * #pw-resize-handle element so the user can drag to resize the panel width.
+ *
+ * Called every time init() runs (panel rebuild), because the handle element
+ * is re-created with injectPanel() each time. The listener is on the new
+ * element so no cleanup of old listeners is needed.
+ *
+ * Resize logic:
+ *   - On mousedown: captures startX (cursor position) and startW (current width)
+ *   - On mousemove: calculates pixel diff from startX
+ *     Right-docked: dragging LEFT increases width (startX - ev.clientX)
+ *     Left-docked:  dragging RIGHT increases width (ev.clientX - startX)
+ *   - Clamps width to 280px min, 600px max
+ *   - Calls applyPanelPosition() on every move to keep layout in sync
+ *   - On mouseup: removes both mousemove and mouseup listeners (cleanup)
+ *
+ * NOTE: Listeners are on document (not the handle) during drag so the mouse
+ * can move outside the handle without losing the drag.
+ */
 function setupDragResize() {
   var handle = document.getElementById("pw-resize-handle");
   handle.addEventListener("mousedown", function (e) {
@@ -219,7 +333,35 @@ function setupDragResize() {
 /* ======================================================
    TOAST
    ====================================================== */
+
+/*
+ * toastTimer
+ * ----------
+ * Holds the setTimeout ID for auto-hiding the toast.
+ * Stored at module scope so clearTimeout can cancel a previous toast
+ * when a new one is shown before the 3s expires.
+ */
 var toastTimer = null;
+
+/**
+ * showToast(msg, type)
+ * --------------------
+ * Shows a temporary floating notification at the bottom of the panel.
+ * Auto-dismisses after 3 seconds. Cancels any currently showing toast.
+ *
+ * Targets: #pw-toast (created by injectPanel, appended to body)
+ *
+ * @param {string} msg   The message text to display
+ *                       e.g. "Entry saved!", "Scraped 98 rows", "Label is required"
+ * @param {string} type  CSS class suffix controlling the colour:
+ *                       "success" — green
+ *                       "error"   — red
+ *                       "warning" — yellow/orange
+ *                       "info"    — neutral (default if omitted)
+ *
+ * CSS: .pw-toast-show activates visibility; removing the class hides it.
+ * The panel.css handles the slide-in/out animation via transition.
+ */
 function showToast(msg, type) {
   var toast = document.getElementById("pw-toast");
   if (!toast) return;
