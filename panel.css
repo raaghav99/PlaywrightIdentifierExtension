@@ -931,13 +931,12 @@
 
 /* ==========================================================
    DARK MODE
-   Playwright reports set class="dark" on <html> when dark
-   mode is active. We also honour prefers-color-scheme as
-   a fallback for other environments.
+   Two independent triggers — both apply the same dark tokens:
+     1. html.dark   — Playwright's own report dark mode (auto)
+     2. html.pw-dark — Our manual toggle button (never conflicts)
    ========================================================== */
 
-/* — via Playwright dark class — */
-html.dark #pw-ext-panel {
+:is(html.dark, html.pw-dark) #pw-ext-panel {
   --pw-bg:           #1e1e2e;
   --pw-surface:      #181825;
   --pw-border:       #313244;
@@ -959,64 +958,64 @@ html.dark #pw-ext-panel {
   box-shadow: -2px 0 20px rgba(0,0,0,0.45);
 }
 
-html.dark .pw-label-chip {
+:is(html.dark, html.pw-dark) .pw-label-chip {
   background: #1e3358;
   border-color: #2d5080;
   color: #89b4fa;
 }
-html.dark .pw-label-chip:hover { background: #243f6a; }
+:is(html.dark, html.pw-dark) .pw-label-chip:hover { background: #243f6a; }
 
-html.dark #pw-page-toggle {
+:is(html.dark, html.pw-dark) #pw-page-toggle {
   box-shadow: -2px 0 8px rgba(137,180,250,0.25);
 }
 
-/* Dark: recolor the header pills to work on dark bg */
-html.dark .pw-icon-btn.pw-icon-green {
+/* Dark: header button pills */
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-green {
   color: #86efac;
   background: rgba(134,239,172,0.1);
   border-color: rgba(134,239,172,0.22);
 }
-html.dark .pw-icon-btn.pw-icon-green:hover {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-green:hover {
   background: rgba(134,239,172,0.2);
   border-color: rgba(134,239,172,0.4);
   color: #bbf7d0;
 }
-html.dark .pw-icon-btn.pw-icon-scrape {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-scrape {
   color: #89b4fa;
   background: rgba(137,180,250,0.1);
   border-color: rgba(137,180,250,0.22);
 }
-html.dark .pw-icon-btn.pw-icon-scrape:hover {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-scrape:hover {
   background: rgba(137,180,250,0.2);
   border-color: rgba(137,180,250,0.4);
 }
-html.dark .pw-icon-btn.pw-icon-dock {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-dock {
   color: #a6adc8;
   background: rgba(255,255,255,0.06);
   border-color: rgba(255,255,255,0.1);
 }
-html.dark .pw-icon-btn.pw-icon-dock:hover {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-dock:hover {
   background: rgba(255,255,255,0.12);
   color: #cdd6f4;
 }
-html.dark .pw-icon-btn.pw-icon-theme {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-theme {
   color: #cba6f7;
   background: rgba(203,166,247,0.1);
   border-color: rgba(203,166,247,0.22);
 }
-html.dark .pw-icon-btn.pw-icon-theme:hover {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-theme:hover {
   background: rgba(203,166,247,0.2);
   border-color: rgba(203,166,247,0.4);
 }
-html.dark .pw-icon-btn.pw-icon-danger {
+:is(html.dark, html.pw-dark) .pw-icon-btn.pw-icon-danger {
   color: #f38ba8;
   background: rgba(243,139,168,0.1);
   border-color: rgba(243,139,168,0.22);
 }
 
-/* — via system prefers-color-scheme (non-Playwright contexts) — */
+/* — system prefers-color-scheme fallback (when neither dark class is present) — */
 @media (prefers-color-scheme: dark) {
-  html:not(.dark) #pw-ext-panel {
+  html:not(.dark):not(.pw-dark) #pw-ext-panel {
     --pw-bg:           #1e1e2e;
     --pw-surface:      #181825;
     --pw-border:       #313244;
@@ -1037,28 +1036,26 @@ html.dark .pw-icon-btn.pw-icon-danger {
     --pw-danger-bdr:   #4a2030;
     box-shadow: -2px 0 20px rgba(0,0,0,0.45);
   }
-  html:not(.dark) .pw-label-chip {
-    background: #1e3358;
-    border-color: #2d5080;
-    color: #89b4fa;
+  html:not(.dark):not(.pw-dark) .pw-label-chip {
+    background: #1e3358; border-color: #2d5080; color: #89b4fa;
   }
-  html:not(.dark) .pw-label-chip:hover { background: #243f6a; }
-  html:not(.dark) #pw-page-toggle {
+  html:not(.dark):not(.pw-dark) .pw-label-chip:hover { background: #243f6a; }
+  html:not(.dark):not(.pw-dark) #pw-page-toggle {
     box-shadow: -2px 0 8px rgba(137,180,250,0.25);
   }
-  html:not(.dark) .pw-icon-btn.pw-icon-green {
+  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-green {
     color: #86efac; background: rgba(134,239,172,0.1); border-color: rgba(134,239,172,0.22);
   }
-  html:not(.dark) .pw-icon-btn.pw-icon-scrape {
+  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-scrape {
     color: #89b4fa; background: rgba(137,180,250,0.1); border-color: rgba(137,180,250,0.22);
   }
-  html:not(.dark) .pw-icon-btn.pw-icon-dock {
+  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-dock {
     color: #a6adc8; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);
   }
-  html:not(.dark) .pw-icon-btn.pw-icon-theme {
+  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-theme {
     color: #cba6f7; background: rgba(203,166,247,0.1); border-color: rgba(203,166,247,0.22);
   }
-  html:not(.dark) .pw-icon-btn.pw-icon-danger {
+  html:not(.dark):not(.pw-dark) .pw-icon-btn.pw-icon-danger {
     color: #f38ba8; background: rgba(243,139,168,0.1); border-color: rgba(243,139,168,0.22);
   }
 }

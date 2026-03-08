@@ -14,10 +14,11 @@
    THEME (dark / light toggle)
    ====================================================== */
 function applyTheme(dark) {
+  /* Use pw-dark — never touch html.dark which Playwright owns */
   if (dark) {
-    document.documentElement.classList.add("dark");
+    document.documentElement.classList.add("pw-dark");
   } else {
-    document.documentElement.classList.remove("dark");
+    document.documentElement.classList.remove("pw-dark");
   }
   var btn = document.getElementById("pw-theme-btn");
   if (btn) btn.innerHTML = dark ? "&#9728;" : "&#9790;"; /* sun / moon */
@@ -27,8 +28,10 @@ function applyTheme(dark) {
 function initTheme() {
   var saved = "";
   try { saved = localStorage.getItem("pw-theme") || ""; } catch(e) {}
-  var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  var dark = saved ? saved === "dark" : prefersDark;
+  /* Fallback: mirror Playwright's own dark class or system preference */
+  var playwrightDark = document.documentElement.classList.contains("dark");
+  var prefersDark    = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark = saved ? saved === "dark" : (playwrightDark || prefersDark);
   applyTheme(dark);
 }
 
@@ -102,7 +105,7 @@ function attachListeners() {
 
   document.getElementById("pw-page-toggle").addEventListener("click", toggleMinimize);
   document.getElementById("pw-theme-btn").addEventListener("click", function () {
-    applyTheme(!document.documentElement.classList.contains("dark"));
+    applyTheme(!document.documentElement.classList.contains("pw-dark"));
   });
 
   /* Keyboard — Enter in label field saves */
@@ -405,8 +408,10 @@ function deleteAllEntries() {
    SAVE / UPDATE
    ====================================================== */
 function saveEntry() {
-  var sc   = document.getElementById("pw-sc").value;
-  var name = document.getElementById("pw-name").value;
+  var sc   = (document.getElementById("pw-test-sc")   || {}).textContent || "";
+  var name = (document.getElementById("pw-test-name") || {}).textContent || "";
+  sc   = sc.trim();
+  name = name.trim();
   if (!sc || !name) {
     showToast("Click a test first", "error");
     return;
