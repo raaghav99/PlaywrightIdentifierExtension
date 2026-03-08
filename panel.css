@@ -24,6 +24,10 @@
   transform: translateX(calc(100% - 36px));
 }
 
+#pw-ext-panel.pw-docked-left.pw-minimized {
+  transform: translateX(calc(-100% + 36px));
+}
+
 /* ---------- Resize Handle ---------- */
 #pw-resize-handle {
   position: absolute;

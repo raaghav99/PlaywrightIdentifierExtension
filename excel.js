@@ -147,7 +147,7 @@ function downloadExcel() {
     var dateStr = now.getFullYear() + "-" +
       String(now.getMonth() + 1).padStart(2, "0") + "-" +
       String(now.getDate()).padStart(2, "0");
-    XLSX.writeFile(wb, "identifier-report-" + dateStr + ".xlsx");
+    XLSX.writeFile(wb, "identifier-report-" + dateStr + ".xlsx", { cellStyles: true });
     showToast("Exported " + allRows.length + " tests (" + labelledCount + " labelled)", "success");
   });
 }

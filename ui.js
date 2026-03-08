@@ -20,7 +20,7 @@ function injectPanel() {
 
   /* Header */
   h.push('<div id="pw-panel-header">');
-  h.push('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>');
+  h.push('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>');
   h.push('<span>Test Identifier</span>');
   h.push('</div>');
 
@@ -109,6 +109,8 @@ function toggleMinimize() {
   state.minimized = !state.minimized;
   if (state.minimized) {
     panel.classList.add("pw-minimized");
+    if (state.side === "left") panel.classList.add("pw-docked-left");
+    else panel.classList.remove("pw-docked-left");
     document.body.style.paddingRight = "";
     document.body.style.paddingLeft  = "";
   } else {

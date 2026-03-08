@@ -187,7 +187,7 @@ if (isPlaywrightReport()) {
 
   /* ── Scrape all tests on page ── */
   function scrapeAllTests(cb) {
-    if (state.scraping) return;
+    if (state.scraping) { if (cb) cb(0); return; }
     state.scraping = true;
 
     var rows = document.querySelectorAll(".test-file-test");

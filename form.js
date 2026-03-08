@@ -84,16 +84,17 @@ function listenForTestClicks() {
     var row = e.target.closest(".test-file-test");
     if (row) populateForm(row);
   }, true);
-  new MutationObserver(function () {
+  state.panelObserver = new MutationObserver(function () {
     if (!document.getElementById("pw-ext-panel")) init();
-  }).observe(document.body, { childList: true, subtree: false });
+  });
+  state.panelObserver.observe(document.body, { childList: true, subtree: false });
 }
 
 /* ======================================================
    URL WATCHER
    ====================================================== */
 function setupUrlWatcher() {
-  setInterval(function () {
+  state.urlWatchInterval = setInterval(function () {
     if (location.href !== state.lastUrl) {
       state.lastUrl = location.href;
       onUrlChange();
@@ -297,6 +298,7 @@ function deleteAllEntries() {
     report.labels = {};
     saveReport(report, function () {
       refreshCount(0);
+      updateStatusBar(report.scraped.length, 0, report.scraped.length > 0);
       var container = document.getElementById("pw-list-container");
       if (container) container.innerHTML = '<div class="pw-list-empty">No labeled entries yet.</div>';
       var section = document.getElementById("pw-list-section");
@@ -357,11 +359,11 @@ function saveEntry() {
     reports[url] = report;
 
     /* Upsert pw_rca_library: match by all 4 fields */
-    var rcaKey = rawLabel + "|" + category + "|" + owner + "|" + jira;
+    var rcaKey = rawLabel + "\x00" + category + "\x00" + owner + "\x00" + jira;
     var found  = false;
     for (var i = 0; i < library.length; i++) {
       var ex = library[i];
-      var exKey = ex.label + "|" + (ex.category || "") + "|" + (ex.owner || "") + "|" + (ex.jira || "");
+      var exKey = ex.label + "\x00" + (ex.category || "") + "\x00" + (ex.owner || "") + "\x00" + (ex.jira || "");
       if (exKey === rcaKey) {
         library[i].useCount = (library[i].useCount || 1) + 1;
         library[i].lastUsed = now;
@@ -401,7 +403,7 @@ function saveEntry() {
       state.editingKey = null;
       document.getElementById("pw-save-btn").textContent              = "Save Entry";
       document.getElementById("pw-delete-current-btn").style.display = "none";
-      updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+      if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
       showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
     });
   });
