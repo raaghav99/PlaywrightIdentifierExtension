@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Playwright Test Identifier",
-  "version": "2.3.8",
+  "version": "2.4.0",
   "description": "Label and export Playwright test results directly from the HTML report",
   "icons": {
     "48": "icons/icon48.png"
@@ -15,8 +15,8 @@
         "https://localhost/*",
         "http://127.0.0.1/*",
         "https://127.0.0.1/*",
-        "http://*/html-report/*",
-        "https://*/html-report/*"
+        "http://*/*html-report*",
+        "https://*/*html-report*"
       ],
       "js": ["xlsx.min.js", "content.js", "ui.js", "form.js", "excel.js"],
       "css": ["panel.css"],

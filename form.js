@@ -460,8 +460,7 @@ function showSuggestions(field) {
   var list  = document.getElementById("pw-suggest-" + field);
   var val   = input.value.trim().toLowerCase();
 
-  chrome.storage.local.get(["pw_rca_library"], function (data) {
-    var library = data.pw_rca_library || [];
+  rcaGetAll(function (library) {
     var seen = {}, freq = {};
 
     library.forEach(function (entry) {
@@ -539,8 +538,7 @@ function toggleCopyFromDropdown() {
   var dd = document.getElementById("pw-copy-from-dropdown");
   if (dd.style.display !== "none") { dd.style.display = "none"; return; }
 
-  chrome.storage.local.get(["pw_rca_library"], function (data) {
-    var library = data.pw_rca_library || [];
+  rcaGetAll(function (library) {
     if (!library.length) {
       showToast("No RCA entries to copy from", "warning");
       return;
@@ -638,15 +636,30 @@ function populateForm(row) {
     document.getElementById(id).classList.remove("pw-error");
   });
 
-  state.editingKey = null;
+  state.editingKey    = null;
+  state.currentTestId = data.testId || null;  /* store for saveEntry() to use as key */
   document.getElementById("pw-save-btn").textContent             = "Save";
   document.getElementById("pw-delete-current-btn").style.display = "none";
   document.getElementById("pw-copy-from-dropdown").style.display = "none";
 
-  /* Check if this test already has a label */
-  var key = data.sc + "|" + data.name;
+  /*
+   * Key strategy (Issue 1 fix):
+   *   Primary key   = testId  (unique per parameterized instance, e.g. "abc123-def456")
+   *   Fallback key  = SC|name (old format, for backward compat with pre-v2.4 saved entries)
+   *   If testId is unavailable (row has no link), use SC|name for both.
+   *
+   * When looking up: try primary key first, then old SC|name key so existing
+   * saved labels continue to show as "Update" after the upgrade.
+   */
+  var primaryKey  = data.testId || (data.sc + "|" + data.name);
+  var fallbackKey = data.sc + "|" + data.name;
   getReport(function (report) {
-    var existing = report.labels[key];
+    var existing    = report.labels[primaryKey];
+    var resolvedKey = primaryKey;
+    if (!existing && primaryKey !== fallbackKey) {
+      existing    = report.labels[fallbackKey];
+      resolvedKey = existing ? fallbackKey : primaryKey;
+    }
     if (existing) {
       document.getElementById("pw-label").value    = existing.label || "";
       document.getElementById("pw-category").value = existing.category || "";
@@ -660,7 +673,7 @@ function populateForm(row) {
       } else {
         document.getElementById("pw-label-date").value = todayIso();
       }
-      state.editingKey = key;
+      state.editingKey = resolvedKey;
       document.getElementById("pw-save-btn").textContent             = "Update";
       document.getElementById("pw-delete-current-btn").style.display = "";
     } else {
@@ -872,7 +885,17 @@ function saveEntry() {
   var jira      = document.getElementById("pw-jira").value.trim();
   var labelDate = isoToDdMm(document.getElementById("pw-label-date").value);
   var now       = new Date().toISOString();
-  var key       = sc + "|" + name;
+
+  /*
+   * Key strategy (Issue 1 fix):
+   *   If updating an existing entry: use state.editingKey (preserves old SC|name keys for compat)
+   *   If creating new: prefer state.currentTestId (unique per parameterized test instance)
+   *   Fallback: SC|name (when row has no testId link)
+   *
+   * sc and name are also stored INSIDE labelData so renderList() and excel.js
+   * can display them without needing to parse the key.
+   */
+  var key = state.editingKey || state.currentTestId || (sc + "|" + name);
 
   var labelData = {
     label:     rawLabel,
@@ -880,70 +903,68 @@ function saveEntry() {
     owner:     owner,
     jira:      jira,
     labelDate: labelDate,
-    timestamp: now
+    timestamp: now,
+    sc:        sc,    /* stored for display — renderList/excel no longer parse key */
+    name:      name   /* stored for display */
   };
 
-  /* Need both pw_reports and pw_rca_library in one transaction */
-  chrome.storage.local.get(["pw_reports", "pw_rca_library"], function (data) {
+  /* Save report labels to chrome.storage, RCA library to IndexedDB */
+  chrome.storage.local.get(["pw_reports"], function (data) {
     var reports = data.pw_reports || {};
     var url     = getReportUrl();
     var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: now };
-    var library = data.pw_rca_library || [];
 
     var isUpdate = !!report.labels[key];
-
-    /* Write to current report labels (one per test) */
     report.labels[key] = labelData;
     report.lastAccessed = now;
     reports[url] = report;
 
-    /* Upsert pw_rca_library: match by all 4 fields */
-    var rcaKey = rawLabel + "\x00" + category + "\x00" + owner + "\x00" + jira;
-    var found  = false;
-    for (var i = 0; i < library.length; i++) {
-      var ex = library[i];
-      var exKey = ex.label + "\x00" + (ex.category || "") + "\x00" + (ex.owner || "") + "\x00" + (ex.jira || "");
-      if (exKey === rcaKey) {
-        library[i].useCount = (library[i].useCount || 1) + 1;
-        library[i].lastUsed = now;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      library.push({
-        id:       "rca_" + Date.now(),
-        label:    rawLabel,
-        category: category,
-        owner:    owner,
-        jira:     jira,
-        useCount: 1,
-        lastUsed: now
+    chrome.storage.local.set({ pw_reports: reports }, function () {
+      /* Now upsert the RCA library in IndexedDB */
+      rcaGetAll(function (library) {
+        var rcaKey = rawLabel + "\x00" + category + "\x00" + owner + "\x00" + jira;
+        var found  = false;
+        for (var i = 0; i < library.length; i++) {
+          var ex    = library[i];
+          var exKey = ex.label + "\x00" + (ex.category || "") + "\x00" + (ex.owner || "") + "\x00" + (ex.jira || "");
+          if (exKey === rcaKey) {
+            library[i].useCount = (library[i].useCount || 1) + 1;
+            library[i].lastUsed = now;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          library.push({
+            id:       "rca_" + Date.now(),
+            label:    rawLabel,
+            category: category,
+            owner:    owner,
+            jira:     jira,
+            useCount: 1,
+            lastUsed: now
+          });
+        }
+        if (library.length > 200) {
+          library.sort(function (a, b) { return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0); });
+          library = library.slice(0, 200);
+        }
+        rcaSaveAll(library, function () {
+          refreshCount(Object.keys(report.labels).length);
+          renderLabelChips();
+          if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
+          if (document.getElementById("pw-rca-section").style.display !== "none") renderRcaLibrary();
+          ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
+            document.getElementById(id).value = "";
+          });
+          state.editingKey    = null;
+          state.currentTestId = null;
+          document.getElementById("pw-save-btn").textContent              = "Save Entry";
+          document.getElementById("pw-delete-current-btn").style.display = "none";
+          if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+          showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
+        });
       });
-    }
-
-    /* Cap library at 200 entries */
-    if (library.length > 200) {
-      library.sort(function (a, b) {
-        return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
-      });
-      library = library.slice(0, 200);
-    }
-
-    chrome.storage.local.set({ pw_reports: reports, pw_rca_library: library }, function () {
-      refreshCount(Object.keys(report.labels).length);
-      renderLabelChips();
-      if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
-      if (document.getElementById("pw-rca-section").style.display !== "none") renderRcaLibrary();
-
-      ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
-        document.getElementById(id).value = "";
-      });
-      state.editingKey = null;
-      document.getElementById("pw-save-btn").textContent              = "Save Entry";
-      document.getElementById("pw-delete-current-btn").style.display = "none";
-      if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
-      showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
     });
   });
 }
@@ -1020,21 +1041,31 @@ function renderList(report) {
     return;
   }
 
+  /*
+   * Sort by SC number ascending.
+   * New entries store sc inside labelData; old entries encode it in the key ("SC_015|name").
+   * Read from labelData.sc first, fall back to parsing the key.
+   */
   keys.sort(function (a, b) {
-    var aNum = parseInt((a.split("|")[0] || "").replace(/\D/g, ""), 10) || 99999;
-    var bNum = parseInt((b.split("|")[0] || "").replace(/\D/g, ""), 10) || 99999;
+    var asc  = (labels[a].sc || a.split("|")[0] || "");
+    var bsc  = (labels[b].sc || b.split("|")[0] || "");
+    var aNum = parseInt(asc.replace(/\D/g, ""), 10) || 99999;
+    var bNum = parseInt(bsc.replace(/\D/g, ""), 10) || 99999;
     return aNum - bNum;
   });
 
   var html = [];
   keys.forEach(function (key) {
-    var parts  = key.split("|");
-    var sc     = parts[0];
-    var tname  = parts.slice(1).join("|");
     var e      = labels[key];
+    /* New format: sc and name stored in labelData. Old format: parse from key. */
+    var parts  = key.split("|");
+    var sc     = e.sc    || parts[0];
+    var tname  = e.name  || parts.slice(1).join("|");
 
+    /* Result lookup: match by testId (key for new entries) or by SC+name fallback */
     var result = "UNKNOWN";
     (report.scraped || []).forEach(function (s) {
+      if (s.testId && s.testId === key) { result = s.result; return; }
       if (s.sc === sc && s.name === tname) result = s.result;
     });
 
@@ -1126,8 +1157,8 @@ function deleteEntry(key) {
 function renderLabelChips() {
   var container = document.getElementById("pw-label-chips");
   if (!container) return;
-  chrome.storage.local.get(["pw_rca_library"], function (data) {
-    var library = (data.pw_rca_library || []).sort(function (a, b) {
+  rcaGetAll(function (library) {
+    library = library.sort(function (a, b) {
       return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
     });
     var top = library.slice(0, 3);
@@ -1156,9 +1187,8 @@ function renderLabelChips() {
       btn.addEventListener("click", function (e) {
         e.stopPropagation();
         var id = btn.dataset.id;
-        chrome.storage.local.get(["pw_rca_library"], function (d) {
-          var updated = (d.pw_rca_library || []).filter(function (h) { return h.id !== id; });
-          chrome.storage.local.set({ pw_rca_library: updated }, renderLabelChips);
+        rcaGetAll(function (lib) {
+          rcaSaveAll(lib.filter(function (h) { return h.id !== id; }), renderLabelChips);
         });
       });
     });
@@ -1271,8 +1301,8 @@ function renderRcaLibrary() {
   var container = document.getElementById("pw-rca-container");
   var countEl   = document.getElementById("pw-rca-count");
 
-  chrome.storage.local.get(["pw_rca_library"], function (data) {
-    var library = (data.pw_rca_library || []).sort(function (a, b) {
+  rcaGetAll(function (library) {
+    library = library.sort(function (a, b) {
       return (b.useCount || 0) - (a.useCount || 0);
     });
 
@@ -1320,9 +1350,8 @@ function renderRcaLibrary() {
       btn.addEventListener("click", function (ev) {
         ev.stopPropagation();
         var id = btn.dataset.id;
-        chrome.storage.local.get(["pw_rca_library"], function (d) {
-          var updated = (d.pw_rca_library || []).filter(function (e) { return e.id !== id; });
-          chrome.storage.local.set({ pw_rca_library: updated }, function () {
+        rcaGetAll(function (lib) {
+          rcaSaveAll(lib.filter(function (e) { return e.id !== id; }), function () {
             renderRcaLibrary();
             renderLabelChips();
             showToast("RCA entry removed", "warning");

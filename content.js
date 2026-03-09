@@ -159,6 +159,96 @@ if (isPlaywrightReport()) {
     return location.origin + location.pathname;
   }
 
+  /* ======================================================
+     INDEXEDDB WRAPPER — RCA library storage
+     Stores pw_rca_library in the PAGE's IndexedDB (origin-scoped)
+     so data survives extension reinstalls. Opened once, reused.
+     ====================================================== */
+
+  var _idbInstance = null;
+
+  /**
+   * openRcaDb(cb)
+   * Opens (or creates) the IndexedDB database at the current page's origin.
+   * DB: "pw_identifier_db"  version: 1  store: "rca_library"  keyPath: "id"
+   * Caches the db handle in _idbInstance to avoid reopening on every call.
+   * @param {function} cb  Called with the IDBDatabase instance, or null on error.
+   */
+  function openRcaDb(cb) {
+    if (_idbInstance) { cb(_idbInstance); return; }
+    var req = indexedDB.open("pw_identifier_db", 1);
+    req.onupgradeneeded = function (e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains("rca_library")) {
+        db.createObjectStore("rca_library", { keyPath: "id" });
+      }
+    };
+    req.onsuccess = function (e) {
+      _idbInstance = e.target.result;
+      cb(_idbInstance);
+    };
+    req.onerror = function () {
+      console.error("pw-ext: IndexedDB open failed");
+      cb(null);
+    };
+  }
+
+  /**
+   * rcaGetAll(cb)
+   * Reads all entries from the "rca_library" IndexedDB store.
+   * @param {function} cb  Called with Array of entry objects (empty array on error).
+   *                       Entry shape: { id, label, category, owner, jira, useCount, lastUsed }
+   */
+  function rcaGetAll(cb) {
+    openRcaDb(function (db) {
+      if (!db) { cb([]); return; }
+      var req = db.transaction("rca_library", "readonly").objectStore("rca_library").getAll();
+      req.onsuccess = function () { cb(req.result || []); };
+      req.onerror   = function () { cb([]); };
+    });
+  }
+
+  /**
+   * rcaSaveAll(library, cb)
+   * Clears the "rca_library" store and writes all entries from the array.
+   * This is a full overwrite — same pattern as chrome.storage.local usage.
+   * @param {Array}    library  Array of RCA entry objects to persist.
+   * @param {function} [cb]     Called after the transaction completes.
+   */
+  function rcaSaveAll(library, cb) {
+    openRcaDb(function (db) {
+      if (!db) { if (cb) cb(); return; }
+      var tx    = db.transaction("rca_library", "readwrite");
+      var store = tx.objectStore("rca_library");
+      store.clear();
+      library.forEach(function (entry) { store.put(entry); });
+      tx.oncomplete = function () { if (cb) cb(); };
+      tx.onerror    = function () { if (cb) cb(); };
+    });
+  }
+
+  /**
+   * migrateRcaToIndexedDb(cb)
+   * One-time migration: copies existing pw_rca_library from chrome.storage.local
+   * into IndexedDB, then removes it from chrome.storage to free space.
+   * Uses localStorage flag "pw-rca-idb-v1" to skip if already migrated.
+   * @param {function} [cb]  Called when migration is done (or skipped).
+   */
+  function migrateRcaToIndexedDb(cb) {
+    var migrated = "";
+    try { migrated = localStorage.getItem("pw-rca-idb-v1") || ""; } catch (e) {}
+    if (migrated === "1") { if (cb) cb(); return; }
+    chrome.storage.local.get(["pw_rca_library"], function (data) {
+      var library = data.pw_rca_library || [];
+      rcaSaveAll(library, function () {
+        chrome.storage.local.remove(["pw_rca_library"], function () {
+          try { localStorage.setItem("pw-rca-idb-v1", "1"); } catch (e) {}
+          if (cb) cb();
+        });
+      });
+    });
+  }
+
   /*
    * REPORT_TTL_DAYS
    * ---------------
@@ -401,6 +491,7 @@ if (isPlaywrightReport()) {
     minimized:         false,
     formHidden:        false,
     editingKey:        null,
+    currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */
     lastUrl:           location.href,
     scraping:          false,
     listenersAttached: false
@@ -532,6 +623,9 @@ if (isPlaywrightReport()) {
     }
     refreshCount();         /* form.js */
     renderLabelChips();     /* form.js */
+
+    /* Migrate RCA library from chrome.storage to IndexedDB (one-time, idempotent) */
+    migrateRcaToIndexedDb();
 
     /* Purge old reports first, then read storage — guarantees purge wins */
     purgeOldReports(function () {

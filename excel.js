@@ -77,10 +77,32 @@ function downloadExcel() {
     var allRows = [];
     var labelledCount = 0;
 
+    /*
+     * Build label lookup maps for O(1) matching.
+     *
+     * New format (v2.4+): label keys are testIds, and sc/name are stored inside labelData.
+     * Old format (pre-v2.4): keys were "SC_015|Test name".
+     *
+     * We build two maps:
+     *   byTestId  — key is testId (for new entries)
+     *   byScName  — key is "SC|name" (for old entries AND new, via labelData.sc + labelData.name)
+     * This ensures both old and new entries are found regardless of format.
+     */
+    var byTestId = {}, byScName = {};
+    Object.keys(labels).forEach(function (k) {
+      var lbl = labels[k];
+      byTestId[k] = lbl; /* works when k is a testId */
+      if (lbl.sc && lbl.name) {
+        byScName[lbl.sc + "|" + lbl.name] = lbl; /* new format: sc/name in data */
+      } else {
+        byScName[k] = lbl; /* old format: key IS "SC|name" */
+      }
+    });
+
     /* Use scraped as authoritative list, enrich with labels via O(1) lookup */
     scraped.forEach(function (s) {
-      var key = s.sc + "|" + s.name;
-      var lbl = labels[key];
+      /* Try testId key first (new format), then SC|name (old format) */
+      var lbl = (s.testId ? byTestId[s.testId] : null) || byScName[s.sc + "|" + s.name];
       if (lbl) {
         allRows.push({
           sc:        s.sc,
