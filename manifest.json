@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Playwright Test Identifier",
+  "name": "Playwright RCA Helper",
   "version": "2.4.0",
-  "description": "Label and export Playwright test results directly from the HTML report",
+  "description": "Label, analyse and export Playwright test results with RCA tracking directly from the HTML report",
   "icons": {
     "48": "icons/icon48.png"
   },

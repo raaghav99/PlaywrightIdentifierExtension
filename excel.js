@@ -1,4 +1,4 @@
-/** Playwright Test Identifier - Excel Module v5.1
+/** Playwright RCA Helper - Excel Module v5.1
  * Builds and downloads the .xlsx report.
  * Reads from pw_reports via getReport() for the active report only.
  * Depends on: esc, showToast, getReport from content.js / ui.js,
@@ -161,7 +161,7 @@ function downloadExcel() {
      * Object.entries().sort() produces [label, count] pairs sorted by count desc.
      */
     var summaryRows = [
-      ["Playwright Identifier Report"],
+      ["Playwright RCA Helper — Report"],
       ["Generated:", new Date().toLocaleString()],
       ["Report URL:", report.url || "Unknown"],
       [],
@@ -249,7 +249,7 @@ function downloadExcel() {
     var dateStr = now.getFullYear() + "-" +
       String(now.getMonth() + 1).padStart(2, "0") + "-" +
       String(now.getDate()).padStart(2, "0");
-    XLSX.writeFile(wb, "identifier-report-" + dateStr + ".xlsx", { cellStyles: true });
+    XLSX.writeFile(wb, "rca-report-" + dateStr + ".xlsx", { cellStyles: true });
     showToast("Exported " + allRows.length + " tests (" + labelledCount + " labelled)", "success");
   });
 }

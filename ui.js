@@ -1,4 +1,4 @@
-/** Playwright Test Identifier - UI Module v5.0
+/** Playwright RCA Helper - UI Module v5.0
  * Panel HTML injection, layout, drag/resize, minimize, toast.
  * Depends on: state, esc() from content.js */
 
@@ -57,7 +57,7 @@ function injectPanel() {
   h.push('<div id="pw-header-logo">');
   h.push('<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>');
   h.push('</div>');
-  h.push('<span id="pw-header-title">Test Identifier</span>');
+  h.push('<span id="pw-header-title">RCA Helper</span>');
   h.push('</div>');
   h.push('<div id="pw-header-actions">');
   h.push('<span id="pw-scrape-spinner" class="pw-spinner" style="display:none"></span>');

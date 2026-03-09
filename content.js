@@ -1,4 +1,4 @@
-/** Playwright Test Identifier - Core Bootstrap v5.1
+/** Playwright RCA Helper - Core Bootstrap v5.1
  * Shared constants, state, helpers, and init. Loaded first.
  * ui.js -> form.js -> excel.js depend on globals defined here.
  *
@@ -172,6 +172,8 @@ if (isPlaywrightReport()) {
    * Opens (or creates) the IndexedDB database at the current page's origin.
    * DB: "pw_identifier_db"  version: 1  store: "rca_library"  keyPath: "id"
    * Caches the db handle in _idbInstance to avoid reopening on every call.
+   * Handles unexpected DB close/version-change by clearing the cache so the
+   * next call reopens a fresh connection instead of using a stale handle.
    * @param {function} cb  Called with the IDBDatabase instance, or null on error.
    */
   function openRcaDb(cb) {
@@ -185,6 +187,12 @@ if (isPlaywrightReport()) {
     };
     req.onsuccess = function (e) {
       _idbInstance = e.target.result;
+      /* Invalidate cache if browser closes or upgrades the DB externally */
+      _idbInstance.onclose = function () { _idbInstance = null; };
+      _idbInstance.onversionchange = function () {
+        _idbInstance.close();
+        _idbInstance = null;
+      };
       cb(_idbInstance);
     };
     req.onerror = function () {
@@ -212,6 +220,8 @@ if (isPlaywrightReport()) {
    * rcaSaveAll(library, cb)
    * Clears the "rca_library" store and writes all entries from the array.
    * This is a full overwrite — same pattern as chrome.storage.local usage.
+   * Entries missing an `id` field are skipped (would cause a DataError and
+   * abort the whole transaction silently).
    * @param {Array}    library  Array of RCA entry objects to persist.
    * @param {function} [cb]     Called after the transaction completes.
    */
@@ -221,9 +231,14 @@ if (isPlaywrightReport()) {
       var tx    = db.transaction("rca_library", "readwrite");
       var store = tx.objectStore("rca_library");
       store.clear();
-      library.forEach(function (entry) { store.put(entry); });
+      library.forEach(function (entry) {
+        if (entry && entry.id) { store.put(entry); }
+      });
       tx.oncomplete = function () { if (cb) cb(); };
-      tx.onerror    = function () { if (cb) cb(); };
+      tx.onerror    = function (e) {
+        console.error("pw-ext: rcaSaveAll failed", e);
+        if (cb) cb();
+      };
     });
   }
 
@@ -621,11 +636,13 @@ if (isPlaywrightReport()) {
       setupUrlWatcher();      /* form.js — interval + global keydown, only once */
       state.listenersAttached = true;
     }
-    refreshCount();         /* form.js */
-    renderLabelChips();     /* form.js */
-
-    /* Migrate RCA library from chrome.storage to IndexedDB (one-time, idempotent) */
-    migrateRcaToIndexedDb();
+    /* Migrate RCA library from chrome.storage to IndexedDB (one-time, idempotent).
+       Must complete before renderLabelChips/refreshCount so chips don't render
+       from an empty IndexedDB while migration is still writing old data. */
+    migrateRcaToIndexedDb(function () {
+      refreshCount();       /* form.js */
+      renderLabelChips();   /* form.js */
+    });
 
     /* Purge old reports first, then read storage — guarantees purge wins */
     purgeOldReports(function () {

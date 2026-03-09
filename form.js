@@ -1,4 +1,4 @@
-/** Playwright Test Identifier - Form Module v5.1
+/** Playwright RCA Helper - Form Module v5.1
  * Listeners, autocomplete, populate form, save/delete, saved list, URL watcher,
  * copy-from, label chips, RCA library table.
  *
@@ -936,7 +936,7 @@ function saveEntry() {
         }
         if (!found) {
           library.push({
-            id:       "rca_" + Date.now(),
+            id:       "rca_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
             label:    rawLabel,
             category: category,
             owner:    owner,
