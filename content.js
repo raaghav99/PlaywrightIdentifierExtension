@@ -437,6 +437,13 @@ if (isPlaywrightReport()) {
     var titleEl = row.querySelector(".test-file-title");
     var rawName = titleEl ? titleEl.textContent.trim() : "";
     rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
+    // Strip › Example #N suffixes first, then take after the last ›
+    // so only the scenario name remains — matches excelmaker.js which reads
+    // scenario.name directly from JSON (no feature prefix).
+    NORM.removePatterns.forEach(function (p) { rawName = rawName.replace(p, ""); });
+    rawName = rawName.trim();
+    var lastArrow = rawName.lastIndexOf("\u203a");
+    if (lastArrow !== -1) rawName = rawName.slice(lastArrow + 1).trim();
     var name = normalizeName(rawName);
 
     var testId = "";
