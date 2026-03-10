@@ -129,11 +129,13 @@ function downloadExcel() {
       }
     });
 
-    /* Sort by SC ascending */
+    /* Sort by SC ascending; within same SC sort by name alphabetically
+       (matches excelmaker.js file-alphabetical order since filenames start with SC_NNN_name) */
     allRows.sort(function (a, b) {
       var aNum = parseInt((a.sc || "").replace(/\D/g, ""), 10) || 99999;
       var bNum = parseInt((b.sc || "").replace(/\D/g, ""), 10) || 99999;
-      return aNum - bNum;
+      if (aNum !== bNum) return aNum - bNum;
+      return (a.name || "").localeCompare(b.name || "");
     });
 
     var wb = XLSX.utils.book_new();
