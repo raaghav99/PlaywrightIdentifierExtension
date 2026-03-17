@@ -456,6 +456,34 @@ if (isPlaywrightReport()) {
   }
 
   /**
+   * buildTestCache()
+   * ----------------
+   * Scans all .test-file-test rows currently in the DOM and populates
+   * state.testCache — a plain map of testId → {sc, name, result}.
+   *
+   * Called once on init (via waitForTests) so the cache is ready before
+   * the user navigates into any test detail page via arrow keys.
+   * When the user is on the detail page the sidebar rows are gone from DOM,
+   * so populateFormFromTestId() reads from this in-memory cache instead of
+   * trying to scrape the detail page.
+   *
+   * The locator used by extractRowData():
+   *   testId  — a[href*="testId="]  inside the row  (href="#?testId=<id>")
+   *   name    — .test-file-title    span text
+   *   sc      — .label              span text matching /^SC[_\s-]?\d+$/i
+   *   result  — svg.octicon         class mapped via ICON_STATUS
+   */
+  function buildTestCache() {
+    var rows = document.querySelectorAll(".test-file-test");
+    rows.forEach(function (row) {
+      var data = extractRowData(row);
+      if (data.testId) {
+        state.testCache[data.testId] = { sc: data.sc, name: data.name, result: data.result };
+      }
+    });
+  }
+
+  /**
    * updateStatusBar(scraped, labeled, ok)
    * --------------------------------------
    * Updates the status bar at the top of the panel with current scrape/label counts.
@@ -519,7 +547,8 @@ if (isPlaywrightReport()) {
     currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */
     lastUrl:           location.href,
     scraping:          false,
-    listenersAttached: false
+    listenersAttached: false,
+    testCache:         {}     /* testId → {sc, name, result} — built from list-view rows on init */
   };
 
   /**
@@ -646,6 +675,7 @@ if (isPlaywrightReport()) {
       setupUrlWatcher();      /* form.js — interval + global keydown, only once */
       state.listenersAttached = true;
     }
+    buildTestCache();         /* build testId→{sc,name,result} map from current list rows */
     /* Migrate RCA library from chrome.storage to IndexedDB (one-time, idempotent).
        Must complete before renderLabelChips/refreshCount so chips don't render
        from an empty IndexedDB while migration is still writing old data. */

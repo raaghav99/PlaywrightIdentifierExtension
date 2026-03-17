@@ -429,7 +429,10 @@ function onUrlChange() {
   setTimeout(function () {
     var hash        = location.hash || "";
     var testIdMatch = hash.match(/testId=([^&]+)/);
-    if (!testIdMatch) return;
+
+    /* Back on list view — rebuild cache so arrow navigation stays fresh */
+    if (!testIdMatch) { buildTestCache(); return; }
+
     var testId = decodeURIComponent(testIdMatch[1]);
 
     /* Try sidebar row first (list view — row is in DOM) */
@@ -456,35 +459,14 @@ function onUrlChange() {
  * stored RCA data in chrome.storage.local using testId as the primary key.
  */
 function populateFormFromTestId(testId) {
-  /* --- Scrape test name from detail page --- */
-  /* .test-case-path holds "Suite › ... › Test Name", similar to list rows */
-  var pathEl  = document.querySelector(".test-case-path");
-  var titleEl = document.querySelector(".test-file-title");
-  var rawName = (pathEl || titleEl) ? (pathEl || titleEl).textContent.trim() : "";
-  rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
-  var firstArrow = rawName.indexOf("\u203a");
-  if (firstArrow !== -1) rawName = rawName.slice(firstArrow + 1).trim();
-  var name = normalizeName(rawName) || testId;
-
-  /* --- Scrape SC tag from .label elements (same class as list view) --- */
-  var sc     = "N/A";
-  var labels = document.querySelectorAll(".label");
-  for (var j = 0; j < labels.length; j++) {
-    var txt = labels[j].textContent.trim();
-    var m   = txt.match(/^SC[_\s-]?(\d+)$/i);
-    if (m) { sc = "SC_" + String(parseInt(m[1], 10)).padStart(3, "0"); break; }
-  }
-
-  /* --- Detect result from octicon svg on detail page --- */
-  var result = "UNKNOWN";
-  var icons  = document.querySelectorAll("svg.octicon");
-  for (var k = 0; k < icons.length; k++) {
-    var cls = icons[k].getAttribute("class") || "";
-    for (var key in ICON_STATUS) {
-      if (cls.indexOf(key) !== -1) { result = ICON_STATUS[key]; break; }
-    }
-    if (result !== "UNKNOWN") break;
-  }
+  /* --- Look up pre-built cache (populated from list-view rows on init) --- */
+  /* The cache maps testId → {sc, name, result} scraped from .test-file-test rows.
+     On detail pages the sidebar is gone from DOM, so we rely on this cache.
+     Fallback: unknown values when cache is empty (e.g. direct URL open). */
+  var cached = state.testCache[testId] || {};
+  var sc     = cached.sc     || "N/A";
+  var name   = cached.name   || testId;
+  var result = cached.result || "UNKNOWN";
 
   /* --- Populate test info card --- */
   document.getElementById("pw-result").value                   = result;
