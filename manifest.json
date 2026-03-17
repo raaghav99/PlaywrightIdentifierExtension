@@ -6,7 +6,7 @@
   "icons": {
     "48": "icons/icon48.png"
   },
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage"],
   "content_scripts": [
     {
       "matches": [
