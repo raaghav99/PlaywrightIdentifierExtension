@@ -469,6 +469,8 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 5px;
+  max-height: 76px;  /* ~3 rows of chips — stops before overlapping Category */
+  overflow: hidden;
 }
 .pw-label-chip {
   display: inline-flex;
