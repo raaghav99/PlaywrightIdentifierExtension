@@ -1243,14 +1243,13 @@ function renderLabelChips() {
     library = library.sort(function (a, b) {
       return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
     });
-    var top = library.slice(0, 3);
-    if (!top.length) { container.innerHTML = ""; return; }
-    container.innerHTML = top.map(function (h) {
+    if (!library.length) { container.innerHTML = ""; return; }
+    container.innerHTML = library.map(function (h) {
       return '<span class="pw-label-chip" data-val="' + esc(h.label) +
         '" data-category="' + esc(h.category || "") +
         '" data-owner="' + esc(h.owner || "") +
         '" data-jira="' + esc(h.jira || "") + '">' +
-        esc(h.label) +
+        '<span class="pw-chip-text">' + esc(h.label) + '</span>' +
         '<button class="pw-label-chip-remove" data-id="' + esc(h.id) + '" title="Remove">\u00d7</button>' +
         '</span>';
     }).join("");

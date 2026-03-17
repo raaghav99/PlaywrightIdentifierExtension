@@ -483,10 +483,14 @@
   color: #1d4ed8;
   cursor: pointer;
   transition: background 0.15s;
-  max-width: 100%;
+  max-width: 160px;  /* cap width — text truncates, × button stays visible */
+  min-width: 0;
+}
+.pw-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 .pw-label-chip:hover { background: #dbeafe; }
 .pw-label-chip-remove {
