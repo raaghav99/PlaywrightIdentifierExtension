@@ -567,28 +567,28 @@ function showSuggestions(field) {
     if (field === "label") {
       /* Label field acts as a searchable copy-from dropdown:
          - Opens on focus showing ALL previous entries (most-used first)
-         - Typing narrows the list (search filter, not autocomplete)
+         - Typing narrows the list — filter matches the label text
          - Selecting fills all 4 RCA fields at once
-         Group by label text, keep the most recently used entry per label. */
-      var byLabel = {};
+         Deduplicate by full combination (label+category+owner+jira) so two
+         entries with the same label but different RCA data both appear. */
+      var seen = {};
+      var entries = [];
       library.forEach(function (entry) {
         var lbl = (entry.label || "").trim();
         if (!lbl) return;
-        if (!byLabel[lbl] || new Date(entry.lastUsed || 0) > new Date(byLabel[lbl].lastUsed || 0)) {
-          byLabel[lbl] = entry;
-        }
+        var key = lbl + "|" + (entry.category || "") + "|" + (entry.owner || "") + "|" + (entry.jira || "");
+        if (!seen[key]) { seen[key] = true; entries.push(entry); }
       });
 
-      /* Filter by search text (typed value), sort by useCount descending */
-      var matches = Object.keys(byLabel)
-        .filter(function (lbl) { return !val || lbl.toLowerCase().indexOf(val) !== -1; })
-        .sort(function (a, b) { return (byLabel[b].useCount || 0) - (byLabel[a].useCount || 0); });
+      /* Filter by typed label text, sort by useCount descending */
+      var matches = entries
+        .filter(function (e) { return !val || (e.label || "").toLowerCase().indexOf(val) !== -1; })
+        .sort(function (a, b) { return (b.useCount || 0) - (a.useCount || 0); });
 
       if (!matches.length) { list.style.display = "none"; return; }
 
       /* Render each entry as a single-line summary: label · category · owner · jira */
-      list.innerHTML = matches.map(function (lbl) {
-        var e     = byLabel[lbl];
+      list.innerHTML = matches.map(function (e) {
         var parts = [e.label, e.category, e.owner, e.jira].filter(Boolean);
         var summary = esc(parts.join(" \u00b7 "));
         return '<div class="pw-suggest-item pw-suggest-full"' +
