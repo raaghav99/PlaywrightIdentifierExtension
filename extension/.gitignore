@@ -1,11 +1,28 @@
-# OS
-.DS_Store
-Thumbs.db
+# ============================================================
+# WHITELIST APPROACH — ignore everything, allow only source files
+# To add a new file to version control, add it explicitly below.
+# ============================================================
 
-# Large bundled library — download separately
-# xlsx.min.js is excluded due to size (952 KB)
-# Run: curl -sL -o extension/xlsx.min.js https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
+# Ignore everything by default
+*
 
-# Node
-node_modules/
-*.log
+# --- Allow: core extension source files ---
+!.gitignore
+!manifest.json
+!content.js
+!form.js
+!ui.js
+!excel.js
+!panel.css
+!xlsx.min.js
+
+# --- Allow: icons folder ---
+!icons/
+!icons/*
+
+# ============================================================
+# Everything else (data files, reports, scratch, secrets) stays
+# local and never gets pushed:
+#   *.json, *.html, *.csv, *.b64, *.zip, *.txt
+#   Base64 extracted Data/, docs/, node_modules/, etc.
+# ============================================================
