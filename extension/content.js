@@ -495,6 +495,9 @@ if (isPlaywrightReport()) {
    *   side              "right"|"left"   — which edge the panel is docked to
    *   width             number (px)      — current panel width, default 340
    *   minimized         boolean          — whether panel is hidden/slid off screen
+   *   userClosed        boolean          — true when user explicitly closed the panel
+   *                                        via the toggle tab; prevents test clicks from
+   *                                        auto-reopening until user manually re-opens
    *   formHidden        boolean          — legacy field, currently unused
    *   editingKey        string|null      — "SC_001|Test name" of the entry being
    *                                        edited, or null if creating new
@@ -510,6 +513,7 @@ if (isPlaywrightReport()) {
     side:              "right",
     width:             340,
     minimized:         false,
+    userClosed:        false,
     formHidden:        false,
     editingKey:        null,
     currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */

@@ -1,0 +1,11 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Large bundled library — download separately
+# xlsx.min.js is excluded due to size (952 KB)
+# Run: curl -sL -o extension/xlsx.min.js https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
+
+# Node
+node_modules/
+*.log

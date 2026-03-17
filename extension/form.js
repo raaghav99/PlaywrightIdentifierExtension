@@ -252,7 +252,12 @@ function attachListeners() {
     });
   });
 
-  document.getElementById("pw-page-toggle").addEventListener("click", toggleMinimize);
+  document.getElementById("pw-page-toggle").addEventListener("click", function () {
+    toggleMinimize();
+    /* Track whether the user intentionally closed the panel so test clicks
+       don't auto-reopen it.  Cleared when user manually re-opens. */
+    state.userClosed = state.minimized;
+  });
   document.getElementById("pw-theme-btn").addEventListener("click", function () {
     applyTheme(!document.documentElement.classList.contains("pw-dark"));
   });
@@ -705,7 +710,7 @@ function populateForm(row) {
   });
 
   document.getElementById("pw-label").focus();
-  if (state.minimized) toggleMinimize();
+  if (state.minimized && !state.userClosed) toggleMinimize();
   showView("form");
 }
 
