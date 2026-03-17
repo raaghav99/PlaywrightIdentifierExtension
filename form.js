@@ -106,6 +106,23 @@ function todayIso() {
 }
 
 /**
+ * getStickyDate()
+ * ---------------
+ * Returns the last-used date the user picked in the date picker, or today
+ * if no sticky date has been set yet.
+ * Stored in localStorage under "pw-sticky-date" as "YYYY-MM-DD".
+ * This makes the date field consistent across all tests in a session —
+ * changing it once applies to all subsequent fresh (unsaved) test entries.
+ */
+function getStickyDate() {
+  try {
+    var d = localStorage.getItem("pw-sticky-date");
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  } catch (e) {}
+  return todayIso();
+}
+
+/**
  * isoToDdMm(isoDate)
  * ------------------
  * Converts a date string from "YYYY-MM-DD" (ISO / input[type=date] format)
@@ -245,8 +262,13 @@ function attachListeners() {
     if (e.key === "Enter") saveEntry();
   });
 
-  /* Initialise date picker to today */
-  document.getElementById("pw-label-date").value = todayIso();
+  /* Initialise date picker to sticky date (last used) or today */
+  document.getElementById("pw-label-date").value = getStickyDate();
+
+  /* Persist date changes as sticky so next fresh test uses the same date */
+  document.getElementById("pw-label-date").addEventListener("change", function () {
+    try { localStorage.setItem("pw-sticky-date", this.value); } catch (e) {}
+  });
 
   /* Date filter */
   document.getElementById("pw-date-filter-check").addEventListener("change", function () {
@@ -566,7 +588,7 @@ function toggleCopyFromDropdown() {
         document.getElementById("pw-owner").value    = opt.dataset.owner || "";
         document.getElementById("pw-jira").value     = opt.dataset.jira || "";
         state.editingKey = null;
-        document.getElementById("pw-save-btn").textContent = "Save Entry";
+        document.getElementById("pw-save-btn").textContent = "Save";
         document.getElementById("pw-delete-current-btn").style.display = "none";
         dd.style.display = "none";
         showToast("RCA copied to form", "success");
@@ -677,8 +699,8 @@ function populateForm(row) {
       document.getElementById("pw-save-btn").textContent             = "Update";
       document.getElementById("pw-delete-current-btn").style.display = "";
     } else {
-      /* Fresh test — reset date picker to today */
-      document.getElementById("pw-label-date").value = todayIso();
+      /* Fresh test — use sticky date (last used by user) so it stays consistent */
+      document.getElementById("pw-label-date").value = getStickyDate();
     }
   });
 
@@ -748,7 +770,7 @@ function deleteCurrentEntry() {
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
       showToast("Entry deleted", "warning");
       state.editingKey = null;
-      document.getElementById("pw-save-btn").textContent              = "Save Entry";
+      document.getElementById("pw-save-btn").textContent              = "Save";
       document.getElementById("pw-delete-current-btn").style.display = "none";
       ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
         document.getElementById(id).value = "";
@@ -957,10 +979,13 @@ function saveEntry() {
           ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
             document.getElementById(id).value = "";
           });
-          state.editingKey    = null;
+          /* Keep editingKey pointing at the just-saved entry so a second
+             save (without re-clicking the row) updates the same key instead
+             of creating a duplicate. currentTestId cleared — key is now set. */
+          state.editingKey    = key;
           state.currentTestId = null;
-          document.getElementById("pw-save-btn").textContent              = "Save Entry";
-          document.getElementById("pw-delete-current-btn").style.display = "none";
+          document.getElementById("pw-save-btn").textContent              = "Update";
+          document.getElementById("pw-delete-current-btn").style.display = "";
           if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
           showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
         });
