@@ -370,22 +370,18 @@ function listenForTestClicks() {
  * changes location.hash (e.g. #?testId=abc123) without a page reload.
  * Normal DOMContentLoaded / load events don't fire. We must poll.
  *
- * Mechanism 1: setInterval every 300ms
- *   Compares location.href to state.lastUrl.
- *   On change → updates state.lastUrl and calls onUrlChange().
+ * Mechanism 1: hashchange event
+ *   Fires immediately when Playwright's SPA changes location.hash.
+ *   Covers arrow button clicks, test link clicks, etc.
+ *
+ * Mechanism 2: setInterval every 300ms
+ *   Fallback for history.pushState/replaceState navigations that don't
+ *   fire hashchange. Compares location.href to state.lastUrl.
  *   Stored in state.urlWatchInterval so the old interval is cleared if
  *   setupUrlWatcher() is ever called again (prevents stacked intervals).
  *
- * Mechanism 2: ArrowLeft/ArrowRight keydown listener
- *   Playwright's report lets users navigate tests with arrow keys.
- *   After a 400ms delay (time for React to update the URL), checks if URL
- *   changed and calls onUrlChange().
- *   Skips keydown events originating from inside the panel.
- *
  * Called only ONCE per page load, guarded by state.listenersAttached.
- *
- * NOTE: The keydown listener is on document and never removed. Multiple calls
- * would stack listeners — the listenersAttached guard prevents this.
+ * No keyboard listeners — URL watching is sufficient.
  */
 function setupUrlWatcher() {
   if (state.urlWatchInterval) clearInterval(state.urlWatchInterval);
@@ -405,20 +401,6 @@ function setupUrlWatcher() {
       onUrlChange();
     }
   }, 300);
-
-  /* Mechanism 3: arrow keydown — catches keyboard navigation even if focus
-     was outside the document (focus no longer stolen, so this now fires) */
-  document.addEventListener("keydown", function (e) {
-    if (e.target.closest("#pw-ext-panel")) return;
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      setTimeout(function () {
-        if (location.href !== state.lastUrl) {
-          state.lastUrl = location.href;
-          onUrlChange();
-        }
-      }, 400);
-    }
-  });
 }
 
 /**
