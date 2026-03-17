@@ -389,6 +389,16 @@ function listenForTestClicks() {
  */
 function setupUrlWatcher() {
   if (state.urlWatchInterval) clearInterval(state.urlWatchInterval);
+
+  /* Mechanism 1: hashchange — fires immediately when Playwright's SPA
+     updates location.hash (arrow button clicks, link clicks, etc.) */
+  window.addEventListener("hashchange", function () {
+    state.lastUrl = location.href;
+    onUrlChange();
+  });
+
+  /* Mechanism 2: 300ms poll — fallback for history.pushState/replaceState
+     navigations that don't fire hashchange */
   state.urlWatchInterval = setInterval(function () {
     if (location.href !== state.lastUrl) {
       state.lastUrl = location.href;
@@ -396,6 +406,8 @@ function setupUrlWatcher() {
     }
   }, 300);
 
+  /* Mechanism 3: arrow keydown — catches keyboard navigation even if focus
+     was outside the document (focus no longer stolen, so this now fires) */
   document.addEventListener("keydown", function (e) {
     if (e.target.closest("#pw-ext-panel")) return;
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -709,7 +721,9 @@ function populateForm(row) {
     }
   });
 
-  document.getElementById("pw-label").focus();
+  /* Do NOT steal focus here — auto-focusing the panel input swallows arrow
+     key events (panel stopPropagation) and breaks Playwright's own left/right
+     arrow test navigation.  User can click any input when ready to type. */
   if (state.minimized && !state.userClosed) toggleMinimize();
   showView("form");
 }
