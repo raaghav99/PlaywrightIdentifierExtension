@@ -455,8 +455,8 @@ function onUrlChange() {
  * Used when navigating via arrow keys inside a test detail page where the
  * sidebar test list is not rendered in the DOM.
  *
- * Scrapes test name / SC / result from the detail page DOM, then looks up
- * stored RCA data in chrome.storage.local using testId as the primary key.
+ * Looks up test info from state.testCache (built from list-view rows on init),
+ * then reads stored RCA data from chrome.storage.local using testId as primary key.
  */
 function populateFormFromTestId(testId) {
   /* --- Look up pre-built cache (populated from list-view rows on init) --- */
@@ -773,7 +773,7 @@ function populateForm(row) {
         document.getElementById("pw-label-date").value =
           year + "-" + savedDdMm.split("/")[1] + "-" + savedDdMm.split("/")[0];
       } else {
-        document.getElementById("pw-label-date").value = todayIso();
+        document.getElementById("pw-label-date").value = getStickyDate();
       }
       state.editingKey = resolvedKey;
       document.getElementById("pw-save-btn").textContent             = "Update";

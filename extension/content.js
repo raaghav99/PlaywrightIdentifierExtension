@@ -474,6 +474,7 @@ if (isPlaywrightReport()) {
    *   result  — svg.octicon         class mapped via ICON_STATUS
    */
   function buildTestCache() {
+    state.testCache = {};   /* reset first — prevents stale result entries */
     var rows = document.querySelectorAll(".test-file-test");
     rows.forEach(function (row) {
       var data = extractRowData(row);
@@ -599,6 +600,7 @@ if (isPlaywrightReport()) {
       });
     });
 
+    buildTestCache();   /* keep in-memory cache in sync with freshly scraped rows */
     getReport(function (report) {
       report.scraped = scraped;
       saveReport(report, function () {
