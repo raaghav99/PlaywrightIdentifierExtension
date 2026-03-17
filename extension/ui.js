@@ -99,10 +99,9 @@ function injectPanel() {
 
   /* Label */
   h.push('<div class="pw-field pw-field-input">');
-  h.push('<div class="pw-label-header"><label>Label</label><button id="pw-copy-from-btn" class="pw-copy-from-trigger" type="button">Copy from\u2026</button></div>');
+  h.push('<label>Label</label>');
   h.push('<input id="pw-label" placeholder="e.g. Login timeout issue" autocomplete="off" />');
   h.push('<div id="pw-suggest-label" class="pw-autocomplete-list"></div>');
-  h.push('<div id="pw-copy-from-dropdown" class="pw-copy-from-dropdown" style="display:none"></div>');
   h.push('<div id="pw-label-chips"></div>');
   h.push('</div>');
 

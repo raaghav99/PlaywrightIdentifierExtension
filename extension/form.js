@@ -225,7 +225,6 @@ function attachListeners() {
   document.getElementById("pw-save-btn").addEventListener("click", saveEntry);
   document.getElementById("pw-delete-current-btn").addEventListener("click", deleteCurrentEntry);
   document.getElementById("pw-delete-all-btn").addEventListener("click", deleteAllEntries);
-  document.getElementById("pw-copy-from-btn").addEventListener("click", toggleCopyFromDropdown);
 
   /* Header actions */
   document.getElementById("pw-download-btn").addEventListener("click", downloadExcel);
@@ -485,7 +484,6 @@ function populateFormFromTestId(testId) {
   state.currentTestId = testId;
   document.getElementById("pw-save-btn").textContent             = "Save";
   document.getElementById("pw-delete-current-btn").style.display = "none";
-  document.getElementById("pw-copy-from-dropdown").style.display = "none";
 
   /* --- Look up stored RCA data by testId --- */
   var fallbackKey = sc + "|" + name;
@@ -563,8 +561,60 @@ function showSuggestions(field) {
   var val   = input.value.trim().toLowerCase();
 
   rcaGetAll(function (library) {
-    var seen = {}, freq = {};
+    /* Label field: show full entries so selecting one fills all 4 RCA fields.
+       This replaces the old "Copy from…" button — label autocomplete is now
+       the single entry point for reusing previous RCA data. */
+    if (field === "label") {
+      /* Group by label text, keep the most recently used entry per label */
+      var byLabel = {};
+      library.forEach(function (entry) {
+        var lbl = (entry.label || "").trim();
+        if (!lbl) return;
+        if (!byLabel[lbl] || new Date(entry.lastUsed || 0) > new Date(byLabel[lbl].lastUsed || 0)) {
+          byLabel[lbl] = entry;
+        }
+      });
 
+      var matches = Object.keys(byLabel)
+        .filter(function (lbl) { return !val || lbl.toLowerCase().indexOf(val) !== -1; })
+        .sort(function (a, b) {
+          return (byLabel[b].useCount || 0) - (byLabel[a].useCount || 0);
+        });
+
+      if (!matches.length) { list.style.display = "none"; return; }
+      list.innerHTML = matches.slice(0, 10).map(function (lbl) {
+        var e       = byLabel[lbl];
+        var sub     = [e.category, e.owner].filter(Boolean).join(" \u00b7 ");
+        var count   = e.useCount || 0;
+        return '<div class="pw-suggest-item pw-suggest-full"' +
+          ' data-label="'    + esc(e.label    || "") + '"' +
+          ' data-category="' + esc(e.category || "") + '"' +
+          ' data-owner="'    + esc(e.owner    || "") + '"' +
+          ' data-jira="'     + esc(e.jira     || "") + '">' +
+          '<span class="pw-suggest-label">' + esc(lbl) +
+            (count ? ' <span class="pw-suggest-count">(' + count + ')</span>' : '') +
+          '</span>' +
+          (sub ? '<span class="pw-suggest-sub">' + esc(sub) + '</span>' : '') +
+          '</div>';
+      }).join("");
+      list.style.display = "block";
+      list.querySelectorAll(".pw-suggest-full").forEach(function (el) {
+        el.addEventListener("mousedown", function (e) {
+          e.preventDefault();
+          document.getElementById("pw-label").value    = el.dataset.label    || "";
+          document.getElementById("pw-category").value = el.dataset.category || "";
+          document.getElementById("pw-owner").value    = el.dataset.owner    || "";
+          document.getElementById("pw-jira").value     = el.dataset.jira     || "";
+          list.style.display = "none";
+          /* editingKey intentionally kept — if user is updating an existing
+             entry, saving should still update it, not duplicate it */
+        });
+      });
+      return;
+    }
+
+    /* All other fields: plain value autocomplete (unchanged behaviour) */
+    var seen = {}, freq = {};
     library.forEach(function (entry) {
       var v = (entry[field] || "").trim();
       if (v) {
@@ -601,81 +651,6 @@ function showSuggestions(field) {
   });
 }
 
-/* ======================================================
-   COPY FROM... (reuse RCA from library)
-   ====================================================== */
-
-/**
- * toggleCopyFromDropdown()
- * ------------------------
- * Shows or hides the "Copy from..." dropdown that lets the user copy all
- * 4 RCA fields (label, category, owner, jira) from a previously saved
- * library entry into the current form.
- *
- * Toggle behaviour: if dropdown is already visible, hides it and returns.
- * Otherwise loads library and renders options.
- *
- * Data source: pw_rca_library[] sorted by lastUsed descending.
- * Shows the 20 most recently used entries.
- *
- * Each option is a div with data-* attributes holding the field values:
- *   data-label, data-category, data-owner, data-jira
- * Display text: all non-empty fields joined by "·"
- *
- * On option click:
- *   - Fills pw-label, pw-category, pw-owner, pw-jira inputs
- *   - Resets state.editingKey to null (this is a NEW entry, not an update
- *     of an existing one — SC/name are still from the previously clicked test)
- *   - Sets save btn text to "Save Entry"
- *   - Hides delete button (no existing entry to delete)
- *   - Hides dropdown
- *   - Shows "RCA copied to form" toast
- *
- * REVIEW: After copying, save-btn says "Save Entry" but the form may still
- * have an existing test selected. If the user had clicked a test that already
- * had a label (state.editingKey was set), resetting to null here means saving
- * will create a duplicate entry rather than update. Minor UX edge case.
- */
-function toggleCopyFromDropdown() {
-  var dd = document.getElementById("pw-copy-from-dropdown");
-  if (dd.style.display !== "none") { dd.style.display = "none"; return; }
-
-  rcaGetAll(function (library) {
-    if (!library.length) {
-      showToast("No RCA entries to copy from", "warning");
-      return;
-    }
-
-    var sorted = library.slice().sort(function (a, b) {
-      return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
-    }).slice(0, 20);
-
-    dd.innerHTML = sorted.map(function (e) {
-      var parts = [e.label, e.category, e.owner, e.jira].filter(Boolean);
-      var summary = parts.length ? esc(parts.join(" \u00b7 ")) : "<em>Empty</em>";
-      return '<div class="pw-copy-option" data-label="' + esc(e.label || "") +
-        '" data-category="' + esc(e.category || "") +
-        '" data-owner="' + esc(e.owner || "") +
-        '" data-jira="' + esc(e.jira || "") + '">' +
-        summary + '</div>';
-    }).join("");
-    dd.style.display = "block";
-
-    dd.querySelectorAll(".pw-copy-option").forEach(function (opt) {
-      opt.addEventListener("click", function () {
-        document.getElementById("pw-label").value    = opt.dataset.label || "";
-        document.getElementById("pw-category").value = opt.dataset.category || "";
-        document.getElementById("pw-owner").value    = opt.dataset.owner || "";
-        document.getElementById("pw-jira").value     = opt.dataset.jira || "";
-        state.editingKey = null;
-        document.getElementById("pw-save-btn").textContent = "Save";
-        document.getElementById("pw-delete-current-btn").style.display = "none";
-        dd.style.display = "none";
-        showToast("RCA copied to form", "success");
-      });
-    });
-  });
-}
 
 /* ======================================================
    POPULATE FORM
@@ -742,7 +717,6 @@ function populateForm(row) {
   state.currentTestId = data.testId || null;  /* store for saveEntry() to use as key */
   document.getElementById("pw-save-btn").textContent             = "Save";
   document.getElementById("pw-delete-current-btn").style.display = "none";
-  document.getElementById("pw-copy-from-dropdown").style.display = "none";
 
   /*
    * Key strategy (Issue 1 fix):
