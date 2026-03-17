@@ -455,21 +455,7 @@
   box-shadow: 0 0 0 3px rgba(220,38,38,0.08);
 }
 
-/* Label autocomplete — two-line full-entry items */
-.pw-suggest-full {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.pw-suggest-full .pw-suggest-label {
-  font-size: 12px;
-  color: var(--pw-text);
-  font-weight: 500;
-}
-.pw-suggest-full .pw-suggest-sub {
-  font-size: 10px;
-  color: var(--pw-text-3);
-}
+/* Label dropdown — full-entry single-line items (inherits .pw-suggest-item styles) */
 
 /* Label chips */
 #pw-label-chips {

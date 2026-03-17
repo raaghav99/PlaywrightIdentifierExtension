@@ -565,7 +565,11 @@ function showSuggestions(field) {
        This replaces the old "Copy from…" button — label autocomplete is now
        the single entry point for reusing previous RCA data. */
     if (field === "label") {
-      /* Group by label text, keep the most recently used entry per label */
+      /* Label field acts as a searchable copy-from dropdown:
+         - Opens on focus showing ALL previous entries (most-used first)
+         - Typing narrows the list (search filter, not autocomplete)
+         - Selecting fills all 4 RCA fields at once
+         Group by label text, keep the most recently used entry per label. */
       var byLabel = {};
       library.forEach(function (entry) {
         var lbl = (entry.label || "").trim();
@@ -575,26 +579,24 @@ function showSuggestions(field) {
         }
       });
 
+      /* Filter by search text (typed value), sort by useCount descending */
       var matches = Object.keys(byLabel)
         .filter(function (lbl) { return !val || lbl.toLowerCase().indexOf(val) !== -1; })
-        .sort(function (a, b) {
-          return (byLabel[b].useCount || 0) - (byLabel[a].useCount || 0);
-        });
+        .sort(function (a, b) { return (byLabel[b].useCount || 0) - (byLabel[a].useCount || 0); });
 
       if (!matches.length) { list.style.display = "none"; return; }
-      list.innerHTML = matches.slice(0, 10).map(function (lbl) {
-        var e       = byLabel[lbl];
-        var sub     = [e.category, e.owner].filter(Boolean).join(" \u00b7 ");
-        var count   = e.useCount || 0;
+
+      /* Render each entry as a single-line summary: label · category · owner · jira */
+      list.innerHTML = matches.map(function (lbl) {
+        var e     = byLabel[lbl];
+        var parts = [e.label, e.category, e.owner, e.jira].filter(Boolean);
+        var summary = esc(parts.join(" \u00b7 "));
         return '<div class="pw-suggest-item pw-suggest-full"' +
           ' data-label="'    + esc(e.label    || "") + '"' +
           ' data-category="' + esc(e.category || "") + '"' +
           ' data-owner="'    + esc(e.owner    || "") + '"' +
           ' data-jira="'     + esc(e.jira     || "") + '">' +
-          '<span class="pw-suggest-label">' + esc(lbl) +
-            (count ? ' <span class="pw-suggest-count">(' + count + ')</span>' : '') +
-          '</span>' +
-          (sub ? '<span class="pw-suggest-sub">' + esc(sub) + '</span>' : '') +
+          summary +
           '</div>';
       }).join("");
       list.style.display = "block";
@@ -606,8 +608,7 @@ function showSuggestions(field) {
           document.getElementById("pw-owner").value    = el.dataset.owner    || "";
           document.getElementById("pw-jira").value     = el.dataset.jira     || "";
           list.style.display = "none";
-          /* editingKey intentionally kept — if user is updating an existing
-             entry, saving should still update it, not duplicate it */
+          /* editingKey intentionally kept — existing entry updates correctly */
         });
       });
       return;
