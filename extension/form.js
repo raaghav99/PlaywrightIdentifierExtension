@@ -1273,6 +1273,21 @@ function renderLabelChips() {
         });
       });
     });
+
+    /* Remove chips that would start a 4th row — measured after layout so
+       only complete rows are shown and no chip is ever clipped mid-height. */
+    requestAnimationFrame(function () {
+      var chips  = Array.from(container.querySelectorAll(".pw-label-chip"));
+      if (!chips.length) return;
+      var maxRows  = 3;
+      var rowCount = 1;
+      var lastTop  = chips[0].offsetTop;
+      chips.forEach(function (chip) {
+        var top = chip.offsetTop;
+        if (top > lastTop + 2) { rowCount++; lastTop = top; }
+        if (rowCount > maxRows) chip.remove();
+      });
+    });
   });
 }
 
