@@ -431,13 +431,112 @@ function onUrlChange() {
     var testIdMatch = hash.match(/testId=([^&]+)/);
     if (!testIdMatch) return;
     var testId = decodeURIComponent(testIdMatch[1]);
-    var link   = document.querySelector('a[href*="testId=' + CSS.escape(testId) + '"]');
-    if (!link)  link = document.querySelector('a[href*="testId=' + testId + '"]');
+
+    /* Try sidebar row first (list view — row is in DOM) */
+    var link = document.querySelector('a[href*="testId=' + CSS.escape(testId) + '"]');
+    if (!link) link = document.querySelector('a[href*="testId=' + testId + '"]');
     if (link) {
       var row = link.closest(".test-file-test");
-      if (row) populateForm(row);
+      if (row) { populateForm(row); return; }
     }
+
+    /* Detail page — no sidebar row in DOM.
+       Scrape test info directly from the detail view + look up storage by testId. */
+    populateFormFromTestId(testId);
   }, 200);
+}
+
+/**
+ * populateFormFromTestId(testId)
+ * --------------------------------
+ * Used when navigating via arrow keys inside a test detail page where the
+ * sidebar test list is not rendered in the DOM.
+ *
+ * Scrapes test name / SC / result from the detail page DOM, then looks up
+ * stored RCA data in chrome.storage.local using testId as the primary key.
+ */
+function populateFormFromTestId(testId) {
+  /* --- Scrape test name from detail page --- */
+  /* .test-case-path holds "Suite › ... › Test Name", similar to list rows */
+  var pathEl  = document.querySelector(".test-case-path");
+  var titleEl = document.querySelector(".test-file-title");
+  var rawName = (pathEl || titleEl) ? (pathEl || titleEl).textContent.trim() : "";
+  rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
+  var firstArrow = rawName.indexOf("\u203a");
+  if (firstArrow !== -1) rawName = rawName.slice(firstArrow + 1).trim();
+  var name = normalizeName(rawName) || testId;
+
+  /* --- Scrape SC tag from .label elements (same class as list view) --- */
+  var sc     = "N/A";
+  var labels = document.querySelectorAll(".label");
+  for (var j = 0; j < labels.length; j++) {
+    var txt = labels[j].textContent.trim();
+    var m   = txt.match(/^SC[_\s-]?(\d+)$/i);
+    if (m) { sc = "SC_" + String(parseInt(m[1], 10)).padStart(3, "0"); break; }
+  }
+
+  /* --- Detect result from octicon svg on detail page --- */
+  var result = "UNKNOWN";
+  var icons  = document.querySelectorAll("svg.octicon");
+  for (var k = 0; k < icons.length; k++) {
+    var cls = icons[k].getAttribute("class") || "";
+    for (var key in ICON_STATUS) {
+      if (cls.indexOf(key) !== -1) { result = ICON_STATUS[key]; break; }
+    }
+    if (result !== "UNKNOWN") break;
+  }
+
+  /* --- Populate test info card --- */
+  document.getElementById("pw-result").value                   = result;
+  document.getElementById("pw-test-sc").textContent            = sc;
+  document.getElementById("pw-test-name").textContent          = name;
+  updateResultBadge(result);
+  document.getElementById("pw-test-info-empty").style.display  = "none";
+  document.getElementById("pw-test-info-filled").style.display = "block";
+
+  /* --- Reset editable fields --- */
+  ["pw-label", "pw-category", "pw-owner", "pw-jira"].forEach(function (id) {
+    document.getElementById(id).value = "";
+    document.getElementById(id).classList.remove("pw-error");
+  });
+  state.editingKey    = null;
+  state.currentTestId = testId;
+  document.getElementById("pw-save-btn").textContent             = "Save";
+  document.getElementById("pw-delete-current-btn").style.display = "none";
+  document.getElementById("pw-copy-from-dropdown").style.display = "none";
+
+  /* --- Look up stored RCA data by testId --- */
+  var fallbackKey = sc + "|" + name;
+  getReport(function (report) {
+    var existing    = report.labels[testId];
+    var resolvedKey = testId;
+    if (!existing && testId !== fallbackKey) {
+      existing    = report.labels[fallbackKey];
+      resolvedKey = existing ? fallbackKey : testId;
+    }
+    if (existing) {
+      document.getElementById("pw-label").value    = existing.label    || "";
+      document.getElementById("pw-category").value = existing.category || "";
+      document.getElementById("pw-owner").value    = existing.owner    || "";
+      document.getElementById("pw-jira").value     = existing.jira     || "";
+      var savedDdMm = existing.labelDate || "";
+      if (savedDdMm && /^\d{2}\/\d{2}$/.test(savedDdMm)) {
+        var year = new Date().getFullYear();
+        document.getElementById("pw-label-date").value =
+          year + "-" + savedDdMm.split("/")[1] + "-" + savedDdMm.split("/")[0];
+      } else {
+        document.getElementById("pw-label-date").value = getStickyDate();
+      }
+      state.editingKey = resolvedKey;
+      document.getElementById("pw-save-btn").textContent             = "Update";
+      document.getElementById("pw-delete-current-btn").style.display = "";
+    } else {
+      document.getElementById("pw-label-date").value = getStickyDate();
+    }
+  });
+
+  if (state.minimized && !state.userClosed) toggleMinimize();
+  showView("form");
 }
 
 /* ======================================================
