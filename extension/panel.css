@@ -455,7 +455,13 @@
   box-shadow: 0 0 0 3px rgba(220,38,38,0.08);
 }
 
-/* Label dropdown — full-entry single-line items (inherits .pw-suggest-item styles) */
+/* Label dropdown — full-entry single-line items */
+.pw-suggest-full {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;   /* override flex from .pw-suggest-item so text truncates */
+}
 
 /* Label chips */
 #pw-label-chips {
