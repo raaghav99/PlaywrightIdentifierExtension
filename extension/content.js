@@ -500,6 +500,131 @@ if (isPlaywrightReport()) {
   }
 
   /**
+   * parseJenkinsUrl(url)
+   * --------------------
+   * Parses a Jenkins-style Playwright HTML report URL to extract
+   * environment, banner, and build number.
+   *
+   * Expected URL pattern:
+   *   .../environment/banner/buildNumber/html-report/...
+   *
+   * @param {string} url  Full URL to parse
+   * @returns {{ environment, banner, buildNumber }} or null if not a Jenkins URL
+   */
+  function parseJenkinsUrl(url) {
+    var m = (url || "").match(/\/([^/]+)\/([^/]+)\/(\d+)\/html-report/i);
+    if (!m) return null;
+    return { environment: m[1], banner: m[2], buildNumber: parseInt(m[3], 10) };
+  }
+
+  /**
+   * findPreviousBuildReport(current, allReports)
+   * ---------------------------------------------
+   * Finds the most recent prior build's report for the same environment+banner
+   * that has at least one label entry.
+   *
+   * @param {{ environment, banner, buildNumber }} current  Parsed current URL info
+   * @param {object} allReports  The full pw_reports map from chrome.storage
+   * @returns {{ report, buildNumber }} or null if none found
+   */
+  function findPreviousBuildReport(current, allReports) {
+    var candidates = [];
+    Object.keys(allReports).forEach(function (url) {
+      var report = allReports[url];
+      var parsed = parseJenkinsUrl(report.url || "");
+      if (!parsed) return;
+      if (parsed.environment !== current.environment) return;
+      if (parsed.banner !== current.banner) return;
+      if (parsed.buildNumber >= current.buildNumber) return;
+      if (!report.labels || !Object.keys(report.labels).length) return;
+      candidates.push({ report: report, buildNumber: parsed.buildNumber });
+    });
+    if (!candidates.length) return null;
+    candidates.sort(function (a, b) { return b.buildNumber - a.buildNumber; });
+    return candidates[0];
+  }
+
+  /**
+   * importLabelsFromPreviousBuild(sourceReport, targetReport, recurringIds)
+   * -------------------------------------------------------------------------
+   * Additively copies label entries from sourceReport into targetReport.
+   * Only writes keys that are absent in targetReport (non-destructive).
+   * If recurringIds Set is provided and a testId is in it, prefixes the
+   * label text with "[RECURRING] ".
+   *
+   * @param {object} sourceReport   Report to copy labels from
+   * @param {object} targetReport   Report to copy labels into (mutated in-place)
+   * @param {Set}    [recurringIds] Optional set of testId strings to tag
+   * @returns {number}  Count of labels imported
+   */
+  function importLabelsFromPreviousBuild(sourceReport, targetReport, recurringIds) {
+    var count        = 0;
+    var sourceLabels = sourceReport.labels || {};
+    var targetLabels = targetReport.labels || {};
+    Object.keys(sourceLabels).forEach(function (key) {
+      if (targetLabels[key]) return; /* already exists — skip */
+      var entry = {};
+      var src   = sourceLabels[key];
+      Object.keys(src).forEach(function (k) { entry[k] = src[k]; });
+      if (recurringIds && recurringIds.has && recurringIds.has(key)) {
+        if (entry.label && entry.label.indexOf("[RECURRING]") === -1) {
+          entry.label = "[RECURRING] " + entry.label;
+        }
+      }
+      targetLabels[key] = entry;
+      count++;
+    });
+    targetReport.labels = targetLabels;
+    return count;
+  }
+
+  /**
+   * getRecurringTestIds(current, allReports, threshold)
+   * ----------------------------------------------------
+   * Walks backwards through prior builds for same env+banner and identifies
+   * testIds whose label text appears unchanged across N+ consecutive builds.
+   * Returns a Set of those testId strings.
+   *
+   * @param {{ environment, banner, buildNumber }} current  Parsed current URL info
+   * @param {object} allReports  Full pw_reports map
+   * @param {number} [threshold=3]  Min consecutive builds to mark as recurring
+   * @returns {Set<string>}  Set of recurring testIds
+   */
+  function getRecurringTestIds(current, allReports, threshold) {
+    threshold = threshold || 3;
+    var recurring  = new Set();
+
+    /* Collect and sort prior builds desc */
+    var priorBuilds = [];
+    Object.keys(allReports).forEach(function (url) {
+      var report = allReports[url];
+      var parsed = parseJenkinsUrl(report.url || "");
+      if (!parsed) return;
+      if (parsed.environment !== current.environment) return;
+      if (parsed.banner !== current.banner) return;
+      if (parsed.buildNumber >= current.buildNumber) return;
+      priorBuilds.push({ report: report, buildNumber: parsed.buildNumber });
+    });
+    priorBuilds.sort(function (a, b) { return b.buildNumber - a.buildNumber; });
+    if (!priorBuilds.length) return recurring;
+
+    /* Use the most recent prior build as the source of truth for which testIds to check */
+    var sourceLabels = priorBuilds[0].report.labels || {};
+    Object.keys(sourceLabels).forEach(function (testId) {
+      var refLabel = sourceLabels[testId].label;
+      var streak   = 0;
+      for (var i = 0; i < priorBuilds.length; i++) {
+        var entry = (priorBuilds[i].report.labels || {})[testId];
+        if (entry && entry.label === refLabel) { streak++; }
+        else break;
+      }
+      if (streak >= threshold) recurring.add(testId);
+    });
+
+    return recurring;
+  }
+
+  /**
    * extractRowData(row)
    * -------------------
    * Extracts all useful data from a single Playwright test row DOM element.
@@ -825,12 +950,14 @@ if (isPlaywrightReport()) {
           /* Existing report: touch lastAccessed, skip scrape */
           saveReport(report);
           updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+          checkCarryover(); /* Feature 1: show carryover banner if prior build labels available */
         } else {
           /* New report: scrape */
           updateStatusBar(0, 0, false);
           scrapeAllTests(function (count) {
             getReport(function (r) {
               updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+              checkCarryover(); /* Feature 1: show carryover banner after scrape */
             });
           });
         }

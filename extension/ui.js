@@ -64,6 +64,7 @@ function injectPanel() {
   h.push('<button id="pw-theme-btn" class="pw-icon-btn pw-icon-theme" title="Toggle dark/light mode"><span id="pw-theme-icon">&#9790;</span><span id="pw-theme-label">Dark</span></button>');
   h.push('<button id="pw-dock-btn" class="pw-icon-btn pw-icon-dock" title="Switch Side">&#9664;</button>');
   h.push('<button id="pw-scrape-btn" class="pw-icon-btn pw-icon-scrape" title="Re-scrape tests">&#8635;</button>');
+  h.push('<button id="pw-multi-export-btn" class="pw-icon-btn pw-icon-green" title="Export All Banners (same env/build)" style="display:none">&#8862;</button>');
   h.push('<button id="pw-download-btn" class="pw-icon-btn pw-icon-green" title="Download Excel">&#8595;</button>');
   h.push('</div>');
   h.push('</div>');
@@ -77,6 +78,15 @@ function injectPanel() {
 
   /* ── Status Bar ── */
   h.push('<div id="pw-status-bar"><span id="pw-status-text">Loading\u2026</span></div>');
+
+  /* ── Carryover Banner (Feature 1) — hidden until Jenkins prior build detected ── */
+  h.push('<div id="pw-carryover-banner" style="display:none">');
+  h.push('<span id="pw-carryover-text"></span>');
+  h.push('<div class="pw-carryover-actions">');
+  h.push('<button id="pw-carryover-import">Import</button>');
+  h.push('<button id="pw-carryover-ignore">Ignore</button>');
+  h.push('</div>');
+  h.push('</div>');
 
   /* ── Form Section ── */
   h.push('<div id="pw-form-section">');

@@ -255,3 +255,160 @@ function downloadExcel() {
     showToast("Exported " + allRows.length + " tests (" + labelledCount + " labelled)", "success");
   });
 }
+
+/**
+ * downloadMultiBannerExcel()
+ * --------------------------
+ * Exports a combined workbook for all banners that share the same
+ * environment + build number as the current Jenkins URL.
+ *
+ * Requires:
+ *   - Current URL matches Jenkins pattern (env/banner/build/html-report)
+ *   - At least one banner's report in pw_reports has labels
+ *
+ * Sheet layout:
+ *   - One "Details" sheet per banner (same columns as downloadExcel)
+ *   - One "Summary" sheet: all tests across all banners
+ *     Columns: Banner | SC No | Scenario Name | Result | Label | Category | Owner | Jira
+ *
+ * File name: "rca-multi-YYYY-MM-DD.xlsx"
+ */
+function downloadMultiBannerExcel() {
+  if (typeof XLSX === "undefined") {
+    showToast("XLSX not loaded", "error");
+    return;
+  }
+
+  var currentParsed = parseJenkinsUrl(location.href);
+  if (!currentParsed) {
+    showToast("Multi-export requires a Jenkins URL", "warning");
+    return;
+  }
+
+  chrome.storage.local.get(["pw_reports"], function (data) {
+    var allReports = data.pw_reports || {};
+
+    /* Collect all reports for same env + buildNumber that have labels */
+    var bannerReports = [];
+    Object.keys(allReports).forEach(function (url) {
+      var report = allReports[url];
+      var parsed = parseJenkinsUrl(report.url || "");
+      if (!parsed) return;
+      if (parsed.environment !== currentParsed.environment) return;
+      if (parsed.buildNumber !== currentParsed.buildNumber) return;
+      if (!report.labels || !Object.keys(report.labels).length) return;
+      bannerReports.push({ banner: parsed.banner, report: report });
+    });
+
+    if (!bannerReports.length) {
+      showToast("No labelled banners found for this build", "warning");
+      return;
+    }
+
+    /* Sort banners alphabetically */
+    bannerReports.sort(function (a, b) { return a.banner.localeCompare(b.banner); });
+
+    var wb          = XLSX.utils.book_new();
+    var summaryRows = [];
+    var totalTests  = 0;
+    var totalLabels = 0;
+
+    bannerReports.forEach(function (br) {
+      var report  = br.report;
+      var scraped = report.scraped || [];
+      var labels  = report.labels  || {};
+
+      /* Build lookup maps (same logic as downloadExcel) */
+      var byTestId = {}, byScName = {};
+      Object.keys(labels).forEach(function (k) {
+        var lbl = labels[k];
+        byTestId[k] = lbl;
+        if (lbl.sc && lbl.name) { byScName[lbl.sc + "|" + lbl.name] = lbl; }
+        else                    { byScName[k] = lbl; }
+      });
+
+      var sheetRows    = [];
+      var labelledHere = 0;
+      scraped.forEach(function (s) {
+        var lbl = (s.testId ? byTestId[s.testId] : null) || byScName[s.sc + "|" + s.name];
+        var row = {
+          sc:       s.sc,
+          name:     s.name,
+          result:   s.result,
+          label:    lbl ? ((lbl.labelDate ? lbl.labelDate + ": " : "") + (lbl.label || "")) : "",
+          category: lbl ? (lbl.category || "") : "",
+          owner:    lbl ? (lbl.owner || "")    : "",
+          jira:     lbl ? (lbl.jira || "")     : ""
+        };
+        sheetRows.push(row);
+        if (lbl) labelledHere++;
+        /* Add to cross-banner summary */
+        summaryRows.push([br.banner, s.sc, s.name, s.result, row.label, row.category, row.owner, row.jira]);
+      });
+
+      sheetRows.sort(function (a, b) {
+        var aNum = parseInt((a.sc || "").replace(/\D/g, ""), 10) || 99999;
+        var bNum = parseInt((b.sc || "").replace(/\D/g, ""), 10) || 99999;
+        return aNum !== bNum ? aNum - bNum : (a.name || "").localeCompare(b.name || "");
+      });
+
+      totalTests  += scraped.length;
+      totalLabels += labelledHere;
+
+      /* Per-banner Details sheet */
+      var header = ["SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira"];
+      var ws = XLSX.utils.aoa_to_sheet([header].concat(sheetRows.map(function (r) {
+        return [r.sc, r.name, r.result, r.label, r.category, r.owner, r.jira];
+      })));
+      ws["!cols"] = [
+        { width: 12 }, { width: 48 }, { width: 10 }, { width: 28 },
+        { width: 18 }, { width: 18 }, { width: 14 }
+      ];
+      /* Header row style */
+      ["A","B","C","D","E","F","G"].forEach(function (col) {
+        var ref = col + "1";
+        if (ws[ref]) ws[ref].s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "374151" } },
+          alignment: { horizontal: "center" }
+        };
+      });
+      /* Truncate sheet name to 31 chars (Excel limit) */
+      var sheetName = br.banner.slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    /* Cross-banner Summary sheet */
+    var summaryHeader = ["Banner", "SC No", "Scenario Name", "Result", "Label", "Category", "Owner", "Jira"];
+    summaryRows.sort(function (a, b) {
+      return a[0].localeCompare(b[0]) ||
+        (parseInt((a[1] || "").replace(/\D/g, ""), 10) || 99999) -
+        (parseInt((b[1] || "").replace(/\D/g, ""), 10) || 99999);
+    });
+    var wsSummary = XLSX.utils.aoa_to_sheet([summaryHeader].concat(summaryRows));
+    wsSummary["!cols"] = [
+      { width: 18 }, { width: 12 }, { width: 44 }, { width: 10 },
+      { width: 28 }, { width: 18 }, { width: 18 }, { width: 14 }
+    ];
+    ["A","B","C","D","E","F","G","H"].forEach(function (col) {
+      var ref = col + "1";
+      if (wsSummary[ref]) wsSummary[ref].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "2563EB" } },
+        alignment: { horizontal: "center" }
+      };
+    });
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+    var now     = new Date();
+    var dateStr = now.getFullYear() + "-" +
+      String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
+    XLSX.writeFile(wb, "rca-multi-" + dateStr + ".xlsx", { cellStyles: true });
+    showToast(
+      "Exported " + bannerReports.length + " banner" + (bannerReports.length === 1 ? "" : "s") +
+      " \u00b7 " + totalTests + " tests \u00b7 " + totalLabels + " labelled",
+      "success"
+    );
+  });
+}

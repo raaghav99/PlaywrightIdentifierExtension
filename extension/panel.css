@@ -1035,3 +1035,103 @@
   background: rgba(59,130,246,0.7);
   border-color: rgba(59,130,246,0.9);
 }
+
+/* ---------- Carryover Banner (Feature 1) ---------- */
+#pw-carryover-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+  font-size: 11.5px;
+  color: #1e40af;
+  flex-shrink: 0;
+}
+
+#pw-carryover-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.pw-carryover-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.pw-carryover-actions button {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.15s, color 0.15s;
+}
+
+#pw-carryover-import {
+  background: #2563eb;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+#pw-carryover-import:hover {
+  background: #1d4ed8;
+}
+
+#pw-carryover-ignore {
+  background: #fff;
+  color: #64748b;
+  border-color: #cbd5e1;
+}
+#pw-carryover-ignore:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+/* Dark mode */
+:is(html.dark, html.pw-dark) #pw-carryover-banner {
+  background: rgba(37,99,235,0.12);
+  border-color: rgba(59,130,246,0.3);
+  color: #93c5fd;
+}
+:is(html.dark, html.pw-dark) #pw-carryover-import {
+  background: rgba(37,99,235,0.8);
+  border-color: rgba(37,99,235,0.6);
+}
+:is(html.dark, html.pw-dark) #pw-carryover-ignore {
+  background: rgba(255,255,255,0.06);
+  color: #94a3b8;
+  border-color: rgba(255,255,255,0.12);
+}
+:is(html.dark, html.pw-dark) #pw-carryover-ignore:hover {
+  background: rgba(255,255,255,0.12);
+  color: #cbd5e1;
+}
+
+/* ---------- Recurring Badge (Feature 4) ---------- */
+.pw-recurring-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+:is(html.dark, html.pw-dark) .pw-recurring-badge {
+  background: rgba(251,191,36,0.15);
+  color: #fcd34d;
+  border-color: rgba(251,191,36,0.3);
+}

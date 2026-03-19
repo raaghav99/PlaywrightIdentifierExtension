@@ -229,6 +229,41 @@ function attachListeners() {
 
   /* Header actions */
   document.getElementById("pw-download-btn").addEventListener("click", downloadExcel);
+  document.getElementById("pw-multi-export-btn").addEventListener("click", downloadMultiBannerExcel);
+
+  /* Carryover banner buttons (Feature 1) */
+  document.getElementById("pw-carryover-import").addEventListener("click", function () {
+    var banner   = document.getElementById("pw-carryover-banner");
+    var suppKey  = banner.dataset.suppressKey;
+    var srcUrl   = banner.dataset.sourceUrl;
+    var srcBuild = banner.dataset.sourceBuild;
+    chrome.storage.local.get(["pw_reports"], function (data) {
+      var allReports = data.pw_reports || {};
+      var target     = allReports[getReportUrl()];
+      var source     = allReports[srcUrl];
+      if (!target || !source) return;
+      var currentParsed = parseJenkinsUrl(getReportUrl());
+      var recurringIds  = currentParsed
+        ? getRecurringTestIds(currentParsed, allReports)
+        : new Set();
+      var count = importLabelsFromPreviousBuild(source, target, recurringIds);
+      saveReport(target, function () {
+        updateStatusBar(target.scraped.length, Object.keys(target.labels).length, true);
+        renderLabelChips();
+        refreshCount(Object.keys(target.labels).length);
+        showToast(count + " label" + (count === 1 ? "" : "s") + " imported from build " + srcBuild, "success");
+        banner.style.display = "none";
+        try { localStorage.setItem(suppKey, "1"); } catch (e) {}
+      });
+    });
+  });
+
+  document.getElementById("pw-carryover-ignore").addEventListener("click", function () {
+    var banner  = document.getElementById("pw-carryover-banner");
+    var suppKey = banner.dataset.suppressKey;
+    banner.style.display = "none";
+    try { localStorage.setItem(suppKey, "1"); } catch (e) {}
+  });
   document.getElementById("pw-dock-btn").addEventListener("click", function () {
     state.side = state.side === "right" ? "left" : "right";
     applyPanelPosition();
@@ -1188,6 +1223,11 @@ function renderList(report) {
     /* Date prefix: DD/MM from user-set labelDate */
     var datePrefix = e.labelDate ? e.labelDate + ": " : "";
 
+    /* Recurring badge: shown when label was imported with [RECURRING] prefix */
+    var isRecurring  = (e.label || "").indexOf("[RECURRING]") === 0;
+    var displayLabel = isRecurring ? (e.label || "").replace("[RECURRING] ", "") : (e.label || "No label");
+    var recurBadge   = isRecurring ? '<span class="pw-recurring-badge">RECURRING</span>' : "";
+
     var rc   = "pw-badge-" + result.toLowerCase();
     var meta = [e.category, e.owner, e.jira].filter(Boolean).join(" \u00b7 ");
     html.push('<div class="pw-entry-card">' +
@@ -1196,7 +1236,7 @@ function renderList(report) {
         '<span class="pw-entry-sc">' + esc(sc) + '</span>' +
         '<span class="pw-entry-name">' + esc(tname) + '</span>' +
       '</div>' +
-      '<div class="pw-entry-label"><span class="pw-entry-date">' + esc(datePrefix) + '</span>' + esc(e.label || "No label") + '</div>' +
+      '<div class="pw-entry-label">' + recurBadge + '<span class="pw-entry-date">' + esc(datePrefix) + '</span>' + esc(displayLabel) + '</div>' +
       (meta ? '<div class="pw-entry-meta">' + esc(meta) + '</div>' : '') +
       '<button class="pw-delete-btn" data-key="' + esc(key) + '" title="Delete">\u2715</button>' +
       '</div>');
@@ -1494,5 +1534,79 @@ function renderRcaLibrary() {
         });
       });
     });
+  });
+}
+
+/* ======================================================
+   CARRYOVER BANNER (Feature 1)
+   ====================================================== */
+
+/**
+ * checkCarryover()
+ * ----------------
+ * Called from content.js init() after scraping/status-bar update.
+ * Parses the current URL for Jenkins build info, then checks if a prior
+ * build has labels that could be imported into the current (empty) report.
+ *
+ * Shows #pw-carryover-banner if all conditions met:
+ *   1. Current URL matches Jenkins pattern
+ *   2. No suppress key in localStorage for this build
+ *   3. Current report has no labels yet
+ *   4. A prior build with labels exists
+ *   5. There are importable keys (absent in current report)
+ *
+ * Also shows #pw-multi-export-btn whenever Jenkins URL is detected.
+ */
+function checkCarryover() {
+  var currentParsed = parseJenkinsUrl(location.href);
+
+  /* Show/hide multi-export button based on Jenkins URL */
+  var multiBtn = document.getElementById("pw-multi-export-btn");
+  if (multiBtn) multiBtn.style.display = currentParsed ? "inline-flex" : "none";
+
+  if (!currentParsed) return; /* Not a Jenkins URL — nothing to carryover */
+
+  var suppKey = "pw-carryover-ignored-" +
+    currentParsed.environment + "-" +
+    currentParsed.banner + "-" +
+    currentParsed.buildNumber;
+
+  var alreadySuppressed = "";
+  try { alreadySuppressed = localStorage.getItem(suppKey) || ""; } catch (e) {}
+  if (alreadySuppressed === "1") return; /* User already acted on this build */
+
+  chrome.storage.local.get(["pw_reports"], function (data) {
+    var allReports  = data.pw_reports || {};
+    var currentUrl  = getReportUrl();
+    var currentRep  = allReports[currentUrl] || { labels: {} };
+
+    /* If this build already has labels — nothing to import */
+    if (Object.keys(currentRep.labels || {}).length > 0) return;
+
+    var found = findPreviousBuildReport(currentParsed, allReports);
+    if (!found) return;
+
+    /* Count importable labels (keys absent in current report) */
+    var sourceLabels  = found.report.labels || {};
+    var targetLabels  = currentRep.labels   || {};
+    var importable    = Object.keys(sourceLabels).filter(function (k) {
+      return !targetLabels[k];
+    }).length;
+    if (!importable) return;
+
+    /* Show the banner */
+    var banner = document.getElementById("pw-carryover-banner");
+    var text   = document.getElementById("pw-carryover-text");
+    if (!banner || !text) return;
+
+    text.textContent = "\u21a9 RCA from " + currentParsed.environment +
+      " / Build " + found.buildNumber + " available (" + importable + " labels)";
+
+    /* Store context on the banner element so button handlers can read it */
+    banner.dataset.suppressKey = suppKey;
+    banner.dataset.sourceUrl   = found.report.url;
+    banner.dataset.sourceBuild = found.buildNumber;
+
+    banner.style.display = "flex";
   });
 }
