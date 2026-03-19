@@ -3,8 +3,8 @@
  * copy-from, label chips, RCA library table.
  *
  * Data model:
- *   pw_reports      {url: {url, scraped[], labels{}, lastAccessed}} — multi-report
- *   pw_rca_library  [{id, label, category, owner, jira, useCount, lastUsed}]
+ *   reports (IDB)   {url: {url, scraped[], labels{}, lastAccessed}} — multi-report
+ *   pw_rca_library (IDB)  [{id, label, category, owner, jira, useCount, lastUsed}]
  *
  * Depends on: state, ICON_STATUS, normalizeName, esc, showToast, toggleMinimize,
  *             applyPanelPosition, extractRowData, getReportUrl, getReport, saveReport
@@ -917,7 +917,7 @@ function deleteAllEntries() {
  *   #pw-label-date (input) .value       → "YYYY-MM-DD" → converted to "DD/MM"
  *
  * Storage key format: "SC_015|Login - redirect"  (sc + "|" + name)
- * This key is used in both pw_reports.labels{} and state.editingKey.
+ * This key is used in both report.labels{} (IDB) and state.editingKey.
  *
  * Label data saved:
  * {
@@ -936,8 +936,8 @@ function deleteAllEntries() {
  *   If not found: push new entry with useCount=1.
  *   Library capped at 200 entries (oldest/least-used trimmed).
  *
- * Both pw_reports and pw_rca_library are read and written in a SINGLE
- * chrome.storage.local.get/set pair to minimise race conditions.
+ * Report labels are saved to IndexedDB via saveReport(); RCA library
+ * is upserted to IndexedDB via rcaSaveAll() in sequence after saveReport().
  *
  * After successful save:
  *   - Updates count badge
@@ -1004,22 +1004,16 @@ function saveEntry() {
 
   state.saving = true; /* BUG-03: lock until callback chain completes */
 
-  /* Save report labels to chrome.storage, RCA library to IndexedDB */
-  chrome.storage.local.get(["pw_reports"], function (data) {
-    var reports = data.pw_reports || {};
-    var url     = getReportUrl();
-    var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: now };
-
+  /* Save report labels to IndexedDB, RCA library to IndexedDB */
+  getReport(function (report) {
     var isUpdate = !!report.labels[key];
     report.labels[key] = labelData;
     report.lastAccessed = now;
-    reports[url] = report;
 
-    chrome.storage.local.set({ pw_reports: reports }, function () {
-      /* BUG-02: check for storage failure — quota exceeded or other error */
-      if (chrome.runtime.lastError) {
+    saveReport(report, function (saveErr) {
+      if (saveErr) {
         state.saving = false;
-        showToast("Save failed: " + chrome.runtime.lastError.message, "error");
+        showToast("Save failed \u2014 IndexedDB error. See console.", "error");
         return;
       }
       /* Now upsert the RCA library in IndexedDB */
