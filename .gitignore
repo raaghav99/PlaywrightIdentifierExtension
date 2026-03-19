@@ -9,3 +9,11 @@ Thumbs.db
 # Node
 node_modules/
 *.log
+
+# Blob testing — do not push report data to GitHub
+extension/test-reports/
+*.b64
+report.b64
+**/html-report/
+**/playwright-report/
+decoded-blob*.json
