@@ -29,12 +29,20 @@ else {
  * will silently stop working. Both checks should still pass for official reports.
  */
 function isPlaywrightReport() {
-  if ((document.title || "").toLowerCase().includes("playwright")) return true;
-  var scripts = document.querySelectorAll("script");
+  var titleMatch = (document.title || "").toLowerCase().includes("playwright");
+  var scripts    = document.querySelectorAll("script");
+  var blobMatch  = false;
   for (var i = 0; i < scripts.length; i++) {
-    if (scripts[i].textContent && scripts[i].textContent.includes("playwrightReportBase64")) return true;
+    if (scripts[i].textContent && scripts[i].textContent.includes("playwrightReportBase64")) {
+      blobMatch = true; break;
+    }
   }
-  return false;
+  /* BUG-12: warn when title passes but blob string is absent — blob-dependent
+     features (base64 extraction) will silently fail if Playwright renamed the var */
+  if (titleMatch && !blobMatch) {
+    console.warn("pw-ext: playwrightReportBase64 not found — blob extraction disabled. Playwright may have renamed this variable.");
+  }
+  return titleMatch || blobMatch;
 }
 
 if (isPlaywrightReport()) {
@@ -195,9 +203,13 @@ if (isPlaywrightReport()) {
       };
       cb(_idbInstance);
     };
+    /* BUG-19: IDB unavailable — show visible warning so user knows library won't persist */
     req.onerror = function () {
-      console.error("pw-ext: IndexedDB open failed");
+      console.error("pw-ext: IndexedDB open failed — RCA library unavailable");
       cb(null);
+      if (typeof showToast === "function") {
+        showToast("\u26a0 RCA Library unavailable \u2014 IndexedDB failed. Labels save to report only.", "error");
+      }
     };
   }
 
@@ -225,19 +237,21 @@ if (isPlaywrightReport()) {
    * @param {Array}    library  Array of RCA entry objects to persist.
    * @param {function} [cb]     Called after the transaction completes.
    */
+  /* BUG-18: cb signature changed to cb(err) — null means success, truthy means failure.
+     All callers must check the argument before treating the operation as successful. */
   function rcaSaveAll(library, cb) {
     openRcaDb(function (db) {
-      if (!db) { if (cb) cb(); return; }
+      if (!db) { if (cb) cb(new Error("IndexedDB unavailable")); return; }
       var tx    = db.transaction("rca_library", "readwrite");
       var store = tx.objectStore("rca_library");
       store.clear();
       library.forEach(function (entry) {
         if (entry && entry.id) { store.put(entry); }
       });
-      tx.oncomplete = function () { if (cb) cb(); };
+      tx.oncomplete = function () { if (cb) cb(null); };
       tx.onerror    = function (e) {
         console.error("pw-ext: rcaSaveAll failed", e);
-        if (cb) cb();
+        if (cb) cb(e); /* pass error — callers must not treat this as success */
       };
     });
   }
@@ -249,16 +263,37 @@ if (isPlaywrightReport()) {
    * Uses localStorage flag "pw-rca-idb-v1" to skip if already migrated.
    * @param {function} [cb]  Called when migration is done (or skipped).
    */
+  /* BUG-01: flag moved from localStorage (origin-scoped) to chrome.storage (extension-scoped)
+     so the migration runs exactly once across ALL origins, not once per origin.
+     BUG-17: chrome.storage data is only removed AFTER a confirmed successful IDB write.
+     Safe transition: if chrome.storage library is empty, just set the flag without
+     calling rcaSaveAll([]) which would wipe any existing IDB data. */
   function migrateRcaToIndexedDb(cb) {
-    var migrated = "";
-    try { migrated = localStorage.getItem("pw-rca-idb-v1") || ""; } catch (e) {}
-    if (migrated === "1") { if (cb) cb(); return; }
-    chrome.storage.local.get(["pw_rca_library"], function (data) {
+    chrome.storage.local.get(["pw-rca-idb-v1", "pw_rca_library"], function (data) {
+      if (data["pw-rca-idb-v1"] === "1") { if (cb) cb(); return; }
+
       var library = data.pw_rca_library || [];
-      rcaSaveAll(library, function () {
-        chrome.storage.local.remove(["pw_rca_library"], function () {
-          try { localStorage.setItem("pw-rca-idb-v1", "1"); } catch (e) {}
+      if (!library.length) {
+        /* Nothing to migrate — set flag without touching IDB */
+        chrome.storage.local.set({ "pw-rca-idb-v1": "1" }, function () {
           if (cb) cb();
+        });
+        return;
+      }
+
+      rcaSaveAll(library, function (err) {
+        if (err) {
+          /* IDB write failed — keep chrome.storage intact so data is not lost.
+             Flag is NOT set — migration will retry next session. */
+          console.error("pw-ext: migration aborted — IDB write failed, chrome.storage preserved", err);
+          if (cb) cb();
+          return;
+        }
+        /* IDB write confirmed — now safe to remove from chrome.storage */
+        chrome.storage.local.remove(["pw_rca_library"], function () {
+          chrome.storage.local.set({ "pw-rca-idb-v1": "1" }, function () {
+            if (cb) cb();
+          });
         });
       });
     });
@@ -351,18 +386,30 @@ if (isPlaywrightReport()) {
    */
   function purgeOldReports(cb) {
     chrome.storage.local.get(["pw_reports"], function (data) {
-      var reports = data.pw_reports || {};
-      var cutoff  = Date.now() - (REPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
-      var changed = false;
+      var reports      = data.pw_reports || {};
+      var cutoff       = Date.now() - (REPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
+      var changed      = false;
+      var purgedLabels = 0; /* BUG-20: count labels being silently deleted */
+
       Object.keys(reports).forEach(function (url) {
         var ts = new Date(reports[url].lastAccessed || 0).getTime();
         if (ts < cutoff) {
+          purgedLabels += Object.keys(reports[url].labels || {}).length;
           delete reports[url];
           changed = true;
         }
       });
+
       if (changed) {
         chrome.storage.local.set({ pw_reports: reports }, function () {
+          /* BUG-20: warn when labeled data was silently purged */
+          if (purgedLabels > 0 && typeof showToast === "function") {
+            showToast(
+              "\u26a0 " + purgedLabels + " labeled entr" + (purgedLabels === 1 ? "y" : "ies") +
+              " from old builds purged (>10 days). Export next time before they expire.",
+              "warning"
+            );
+          }
           if (cb) cb();
         });
       } else {
@@ -548,6 +595,7 @@ if (isPlaywrightReport()) {
     currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */
     lastUrl:           location.href,
     scraping:          false,
+    saving:            false,  /* BUG-03: guard against double-save race on rapid Enter/click */
     listenersAttached: false,
     testCache:         {}     /* testId → {sc, name, result} — built from list-view rows on init */
   };
