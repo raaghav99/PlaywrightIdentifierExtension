@@ -3,8 +3,8 @@
  * copy-from, label chips, RCA library table.
  *
  * Data model:
- *   pw_reports      {url: {url, scraped[], labels{}, lastAccessed}} — multi-report
- *   pw_rca_library  [{id, label, category, owner, jira, useCount, lastUsed}]
+ *   reports (IDB)   {url: {url, scraped[], labels{}, lastAccessed}} — multi-report
+ *   pw_rca_library (IDB)  [{id, label, category, owner, jira, useCount, lastUsed}]
  *
  * Depends on: state, ICON_STATUS, normalizeName, esc, showToast, toggleMinimize,
  *             applyPanelPosition, extractRowData, getReportUrl, getReport, saveReport
@@ -174,6 +174,7 @@ function isoToDdMm(isoDate) {
  *
  *  Header action buttons:
  *    #pw-download-btn  → downloadExcel()  (excel.js)
+ *    #pw-multi-export-btn → downloadMultiBannerExcel() (excel.js, Jenkins URLs only)
  *    #pw-dock-btn      → toggles state.side right↔left, calls applyPanelPosition()
  *    #pw-scrape-btn    → disables btn+download, shows spinner, calls scrapeAllTests(),
  *                        re-enables and updates status bar in callback
@@ -424,8 +425,13 @@ function setupUrlWatcher() {
  * If no matching row is found (e.g. testId not visible in current filter),
  * silently does nothing.
  */
+/* BUG-07: stored timer ID so rapid URL changes (held arrow key) cancel pending callbacks
+   instead of queuing multiple form-fill cycles that visibly cycle through stale data. */
+var _urlChangeTimer = null;
+
 function onUrlChange() {
-  setTimeout(function () {
+  clearTimeout(_urlChangeTimer);
+  _urlChangeTimer = setTimeout(function () {
     var hash        = location.hash || "";
     var testIdMatch = hash.match(/testId=([^&]+)/);
 
@@ -571,19 +577,23 @@ function showSuggestions(field) {
          - Selecting fills all 4 RCA fields at once
          Deduplicate by full combination (label+category+owner+jira) so two
          entries with the same label but different RCA data both appear. */
-      var seen = {};
+      /* BUG-10: renamed from `var seen` to avoid hoisting collision with the
+         identically-named var in the else branch below */
+      var labelSeen = {};
       var entries = [];
       library.forEach(function (entry) {
         var lbl = (entry.label || "").trim();
         if (!lbl) return;
         var key = lbl + "|" + (entry.category || "") + "|" + (entry.owner || "") + "|" + (entry.jira || "");
-        if (!seen[key]) { seen[key] = true; entries.push(entry); }
+        if (!labelSeen[key]) { labelSeen[key] = true; entries.push(entry); }
       });
 
       /* Filter by typed label text, sort by useCount descending */
+      /* BUG-05: cap at 10 — all other fields already do this; label was missing the slice */
       var matches = entries
         .filter(function (e) { return !val || (e.label || "").toLowerCase().indexOf(val) !== -1; })
-        .sort(function (a, b) { return (b.useCount || 0) - (a.useCount || 0); });
+        .sort(function (a, b) { return (b.useCount || 0) - (a.useCount || 0); })
+        .slice(0, 10);
 
       if (!matches.length) { list.style.display = "none"; return; }
 
@@ -823,7 +833,10 @@ function deleteCurrentEntry() {
   getReport(function (report) {
     delete report.labels[state.editingKey];
     saveReport(report, function () {
-      refreshCount(Object.keys(report.labels).length);
+      var labelCount = Object.keys(report.labels).length;
+      refreshCount(labelCount);
+      /* BUG-06: keep status bar in sync after per-entry delete */
+      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
       showToast("Entry deleted", "warning");
       state.editingKey = null;
@@ -871,7 +884,6 @@ function deleteAllEntries() {
     saveReport(report, function () {
       refreshCount(0);
       updateStatusBar(report.scraped.length, 0, report.scraped.length > 0);
-      var container = document.getElementById("pw-list-container");
       showView("form");
       showToast("Report labels cleared", "warning");
     });
@@ -905,7 +917,7 @@ function deleteAllEntries() {
  *   #pw-label-date (input) .value       → "YYYY-MM-DD" → converted to "DD/MM"
  *
  * Storage key format: "SC_015|Login - redirect"  (sc + "|" + name)
- * This key is used in both pw_reports.labels{} and state.editingKey.
+ * This key is used in both report.labels{} (IDB) and state.editingKey.
  *
  * Label data saved:
  * {
@@ -924,8 +936,8 @@ function deleteAllEntries() {
  *   If not found: push new entry with useCount=1.
  *   Library capped at 200 entries (oldest/least-used trimmed).
  *
- * Both pw_reports and pw_rca_library are read and written in a SINGLE
- * chrome.storage.local.get/set pair to minimise race conditions.
+ * Report labels are saved to IndexedDB via saveReport(); RCA library
+ * is upserted to IndexedDB via rcaSaveAll() in sequence after saveReport().
  *
  * After successful save:
  *   - Updates count badge
@@ -940,6 +952,9 @@ function deleteAllEntries() {
  * Low probability race but worth knowing.
  */
 function saveEntry() {
+  /* BUG-03: prevent double-save race from rapid Enter key or double-click */
+  if (state.saving) return;
+
   var sc   = (document.getElementById("pw-test-sc")   || {}).textContent || "";
   var name = (document.getElementById("pw-test-name") || {}).textContent || "";
   sc   = sc.trim();
@@ -987,18 +1002,20 @@ function saveEntry() {
     name:      name   /* stored for display */
   };
 
-  /* Save report labels to chrome.storage, RCA library to IndexedDB */
-  chrome.storage.local.get(["pw_reports"], function (data) {
-    var reports = data.pw_reports || {};
-    var url     = getReportUrl();
-    var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: now };
+  state.saving = true; /* BUG-03: lock until callback chain completes */
 
+  /* Save report labels to IndexedDB, RCA library to IndexedDB */
+  getReport(function (report) {
     var isUpdate = !!report.labels[key];
     report.labels[key] = labelData;
     report.lastAccessed = now;
-    reports[url] = report;
 
-    chrome.storage.local.set({ pw_reports: reports }, function () {
+    saveReport(report, function (saveErr) {
+      if (saveErr) {
+        state.saving = false;
+        showToast("Save failed \u2014 IndexedDB error. See console.", "error");
+        return;
+      }
       /* Now upsert the RCA library in IndexedDB */
       rcaGetAll(function (library) {
         var rcaKey = rawLabel + "\x00" + category + "\x00" + owner + "\x00" + jira;
@@ -1025,10 +1042,22 @@ function saveEntry() {
           });
         }
         if (library.length > 200) {
-          library.sort(function (a, b) { return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0); });
+          /* BUG-14: evict by useCount desc first, lastUsed desc as tiebreaker —
+             a label used 50 times over a month beats one used once yesterday */
+          library.sort(function (a, b) {
+            if ((b.useCount || 0) !== (a.useCount || 0)) return (b.useCount || 0) - (a.useCount || 0);
+            return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
+          });
           library = library.slice(0, 200);
         }
-        rcaSaveAll(library, function () {
+        rcaSaveAll(library, function (err) {
+          state.saving = false; /* BUG-03: release lock regardless of IDB outcome */
+          if (err) {
+            /* IDB write failed — report label IS saved, library update is not.
+               Don't show "Entry saved!" — show a clear warning instead. */
+            showToast("Label saved to report. RCA library update failed \u2014 see console.", "warning");
+            return;
+          }
           refreshCount(Object.keys(report.labels).length);
           renderLabelChips();
           if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
@@ -1041,7 +1070,9 @@ function saveEntry() {
              of creating a duplicate. currentTestId cleared — key is now set. */
           state.editingKey    = key;
           state.currentTestId = null;
-          document.getElementById("pw-save-btn").textContent              = "Update";
+          var saveBtn = document.getElementById("pw-save-btn");
+          saveBtn.textContent = "Update";
+          saveBtn.blur();
           document.getElementById("pw-delete-current-btn").style.display = "";
           if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
           showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
@@ -1105,14 +1136,13 @@ function renderList(report) {
     ? filterInput.value : null; /* "YYYY-MM-DD" */
 
   if (filterDate) {
+    /* BUG-08: filter by labelDate (what the user set + what the card shows), not
+       by timestamp (when the entry was written to storage). A backdated label like
+       "05/03" saved on 08/03 should match the 05/03 filter, not the 08/03 filter.
+       Convert filterDate "YYYY-MM-DD" → "DD/MM" to match the stored labelDate format. */
+    var filterDdMm = filterDate.slice(8, 10) + "/" + filterDate.slice(5, 7);
     keys = keys.filter(function (key) {
-      var ts = labels[key].timestamp;
-      if (!ts) return false;
-      var d = new Date(ts);
-      var ds = d.getFullYear() + "-" +
-        String(d.getMonth() + 1).padStart(2, "0") + "-" +
-        String(d.getDate()).padStart(2, "0");
-      return ds === filterDate;
+      return (labels[key].labelDate || "") === filterDdMm;
     });
   }
 
@@ -1136,6 +1166,14 @@ function renderList(report) {
     return aNum - bNum;
   });
 
+  /* BUG-11: build O(1) lookup maps once — avoids O(n×m) nested forEach.
+     For 700 tests × 100 labels that was 70 000 iterations per render. */
+  var scrapedByTestId = {}, scrapedByScName = {};
+  (report.scraped || []).forEach(function (s) {
+    if (s.testId) scrapedByTestId[s.testId] = s.result;
+    scrapedByScName[s.sc + "|" + s.name] = s.result;
+  });
+
   var html = [];
   keys.forEach(function (key) {
     var e      = labels[key];
@@ -1144,12 +1182,8 @@ function renderList(report) {
     var sc     = e.sc    || parts[0];
     var tname  = e.name  || parts.slice(1).join("|");
 
-    /* Result lookup: match by testId (key for new entries) or by SC+name fallback */
-    var result = "UNKNOWN";
-    (report.scraped || []).forEach(function (s) {
-      if (s.testId && s.testId === key) { result = s.result; return; }
-      if (s.sc === sc && s.name === tname) result = s.result;
-    });
+    /* BUG-11: O(1) result lookup via pre-built maps */
+    var result = scrapedByTestId[key] || scrapedByScName[sc + "|" + tname] || "UNKNOWN";
 
     /* Date prefix: DD/MM from user-set labelDate */
     var datePrefix = e.labelDate ? e.labelDate + ": " : "";
@@ -1197,7 +1231,10 @@ function deleteEntry(key) {
   getReport(function (report) {
     delete report.labels[key];
     saveReport(report, function () {
-      refreshCount(Object.keys(report.labels).length);
+      var labelCount = Object.keys(report.labels).length;
+      refreshCount(labelCount);
+      /* BUG-06: keep status bar in sync after per-entry delete */
+      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
       renderList(report);
       showToast("Entry deleted", "warning");
     });
@@ -1244,7 +1281,9 @@ function renderLabelChips() {
       return new Date(b.lastUsed || 0) - new Date(a.lastUsed || 0);
     });
     if (!library.length) { container.innerHTML = ""; return; }
-    container.innerHTML = library.map(function (h) {
+    /* BUG-04: slice to ~15 before map — rAF row-limiter trims further.
+       Without this, all 200 entries hit the DOM on every save/delete cycle. */
+    container.innerHTML = library.slice(0, 15).map(function (h) {
       return '<span class="pw-label-chip" data-val="' + esc(h.label) +
         '" data-category="' + esc(h.category || "") +
         '" data-owner="' + esc(h.owner || "") +

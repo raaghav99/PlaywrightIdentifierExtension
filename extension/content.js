@@ -29,12 +29,20 @@ else {
  * will silently stop working. Both checks should still pass for official reports.
  */
 function isPlaywrightReport() {
-  if ((document.title || "").toLowerCase().includes("playwright")) return true;
-  var scripts = document.querySelectorAll("script");
+  var titleMatch = (document.title || "").toLowerCase().includes("playwright");
+  var scripts    = document.querySelectorAll("script");
+  var blobMatch  = false;
   for (var i = 0; i < scripts.length; i++) {
-    if (scripts[i].textContent && scripts[i].textContent.includes("playwrightReportBase64")) return true;
+    if (scripts[i].textContent && scripts[i].textContent.includes("playwrightReportBase64")) {
+      blobMatch = true; break;
+    }
   }
-  return false;
+  /* BUG-12: warn when title passes but blob string is absent — blob-dependent
+     features (base64 extraction) will silently fail if Playwright renamed the var */
+  if (titleMatch && !blobMatch) {
+    console.warn("pw-ext: playwrightReportBase64 not found — blob extraction disabled. Playwright may have renamed this variable.");
+  }
+  return titleMatch || blobMatch;
 }
 
 if (isPlaywrightReport()) {
@@ -160,34 +168,39 @@ if (isPlaywrightReport()) {
   }
 
   /* ======================================================
-     INDEXEDDB WRAPPER — RCA library storage
-     Stores pw_rca_library in the PAGE's IndexedDB (origin-scoped)
-     so data survives extension reinstalls. Opened once, reused.
+     INDEXEDDB WRAPPER
+     All persistent data lives here — page-origin scoped so it
+     survives extension reinstalls, ID changes, and Web Store migration.
+
+     DB: "pw_identifier_db"  version: 2
+       "rca_library"  keyPath: "id"   — reusable label/category/owner/jira entries
+       "reports"      keyPath: "url"  — per-report scraped data + labels
      ====================================================== */
 
   var _idbInstance = null;
 
   /**
-   * openRcaDb(cb)
-   * Opens (or creates) the IndexedDB database at the current page's origin.
-   * DB: "pw_identifier_db"  version: 1  store: "rca_library"  keyPath: "id"
-   * Caches the db handle in _idbInstance to avoid reopening on every call.
-   * Handles unexpected DB close/version-change by clearing the cache so the
-   * next call reopens a fresh connection instead of using a stale handle.
-   * @param {function} cb  Called with the IDBDatabase instance, or null on error.
+   * openDb(cb)
+   * Opens (or upgrades) the shared IndexedDB database.
+   * Version 2 adds the "reports" store so pw_reports data survives reinstalls.
+   * Caches the handle; invalidates on close/versionchange.
+   * @param {function} cb  Called with IDBDatabase instance, or null on open failure.
    */
-  function openRcaDb(cb) {
+  function openDb(cb) {
     if (_idbInstance) { cb(_idbInstance); return; }
-    var req = indexedDB.open("pw_identifier_db", 1);
+    var req = indexedDB.open("pw_identifier_db", 2);
     req.onupgradeneeded = function (e) {
       var db = e.target.result;
       if (!db.objectStoreNames.contains("rca_library")) {
         db.createObjectStore("rca_library", { keyPath: "id" });
       }
+      /* v2: per-report storage — survives extension reinstall */
+      if (!db.objectStoreNames.contains("reports")) {
+        db.createObjectStore("reports", { keyPath: "url" });
+      }
     };
     req.onsuccess = function (e) {
       _idbInstance = e.target.result;
-      /* Invalidate cache if browser closes or upgrades the DB externally */
       _idbInstance.onclose = function () { _idbInstance = null; };
       _idbInstance.onversionchange = function () {
         _idbInstance.close();
@@ -195,11 +208,18 @@ if (isPlaywrightReport()) {
       };
       cb(_idbInstance);
     };
+    /* BUG-19: show visible warning — silent no-ops are worse than a clear message */
     req.onerror = function () {
-      console.error("pw-ext: IndexedDB open failed");
+      console.error("pw-ext: IndexedDB open failed — all data will be session-only");
       cb(null);
+      if (typeof showToast === "function") {
+        showToast("\u26a0 Storage unavailable \u2014 IndexedDB failed. Data won\u2019t persist this session.", "error");
+      }
     };
   }
+
+  /* Keep openRcaDb as an alias — all existing callers (rcaGetAll/rcaSaveAll) work unchanged */
+  var openRcaDb = openDb;
 
   /**
    * rcaGetAll(cb)
@@ -225,19 +245,21 @@ if (isPlaywrightReport()) {
    * @param {Array}    library  Array of RCA entry objects to persist.
    * @param {function} [cb]     Called after the transaction completes.
    */
+  /* BUG-18: cb signature changed to cb(err) — null means success, truthy means failure.
+     All callers must check the argument before treating the operation as successful. */
   function rcaSaveAll(library, cb) {
     openRcaDb(function (db) {
-      if (!db) { if (cb) cb(); return; }
+      if (!db) { if (cb) cb(new Error("IndexedDB unavailable")); return; }
       var tx    = db.transaction("rca_library", "readwrite");
       var store = tx.objectStore("rca_library");
       store.clear();
       library.forEach(function (entry) {
         if (entry && entry.id) { store.put(entry); }
       });
-      tx.oncomplete = function () { if (cb) cb(); };
+      tx.oncomplete = function () { if (cb) cb(null); };
       tx.onerror    = function (e) {
         console.error("pw-ext: rcaSaveAll failed", e);
-        if (cb) cb();
+        if (cb) cb(e); /* pass error — callers must not treat this as success */
       };
     });
   }
@@ -249,17 +271,85 @@ if (isPlaywrightReport()) {
    * Uses localStorage flag "pw-rca-idb-v1" to skip if already migrated.
    * @param {function} [cb]  Called when migration is done (or skipped).
    */
+  /* BUG-01: flag moved from localStorage (origin-scoped) to chrome.storage (extension-scoped)
+     so the migration runs exactly once across ALL origins, not once per origin.
+     BUG-17: chrome.storage data is only removed AFTER a confirmed successful IDB write.
+     Safe transition: if chrome.storage library is empty, just set the flag without
+     calling rcaSaveAll([]) which would wipe any existing IDB data. */
   function migrateRcaToIndexedDb(cb) {
-    var migrated = "";
-    try { migrated = localStorage.getItem("pw-rca-idb-v1") || ""; } catch (e) {}
-    if (migrated === "1") { if (cb) cb(); return; }
-    chrome.storage.local.get(["pw_rca_library"], function (data) {
+    chrome.storage.local.get(["pw-rca-idb-v1", "pw_rca_library"], function (data) {
+      if (data["pw-rca-idb-v1"] === "1") { if (cb) cb(); return; }
+
       var library = data.pw_rca_library || [];
-      rcaSaveAll(library, function () {
-        chrome.storage.local.remove(["pw_rca_library"], function () {
-          try { localStorage.setItem("pw-rca-idb-v1", "1"); } catch (e) {}
+      if (!library.length) {
+        /* Nothing to migrate — set flag without touching IDB */
+        chrome.storage.local.set({ "pw-rca-idb-v1": "1" }, function () {
           if (cb) cb();
         });
+        return;
+      }
+
+      rcaSaveAll(library, function (err) {
+        if (err) {
+          /* IDB write failed — keep chrome.storage intact so data is not lost.
+             Flag is NOT set — migration will retry next session. */
+          console.error("pw-ext: migration aborted — IDB write failed, chrome.storage preserved", err);
+          if (cb) cb();
+          return;
+        }
+        /* IDB write confirmed — now safe to remove from chrome.storage */
+        chrome.storage.local.remove(["pw_rca_library"], function () {
+          chrome.storage.local.set({ "pw-rca-idb-v1": "1" }, function () {
+            if (cb) cb();
+          });
+        });
+      });
+    });
+  }
+
+  /**
+   * migrateReportsToIndexedDb(cb)
+   * One-time migration: copies pw_reports from chrome.storage.local into the
+   * IDB "reports" store, then removes it from chrome.storage.
+   * Uses chrome.storage flag "pw-reports-idb-v1" to run exactly once.
+   * Only removes from chrome.storage after a confirmed successful IDB write.
+   * If chrome.storage is already empty (fresh install or already migrated),
+   * just sets the flag without touching IDB — prevents wiping existing IDB data.
+   */
+  function migrateReportsToIndexedDb(cb) {
+    chrome.storage.local.get(["pw-reports-idb-v1", "pw_reports"], function (data) {
+      if (data["pw-reports-idb-v1"] === "1") { if (cb) cb(); return; }
+
+      var reports = data.pw_reports || {};
+      var urls    = Object.keys(reports);
+
+      if (!urls.length) {
+        chrome.storage.local.set({ "pw-reports-idb-v1": "1" }, function () {
+          if (cb) cb();
+        });
+        return;
+      }
+
+      openDb(function (db) {
+        if (!db) {
+          /* IDB unavailable — keep chrome.storage, don't set flag so we retry next session */
+          if (cb) cb();
+          return;
+        }
+        var tx    = db.transaction("reports", "readwrite");
+        var store = tx.objectStore("reports");
+        urls.forEach(function (url) { store.put(reports[url]); });
+        tx.oncomplete = function () {
+          chrome.storage.local.remove(["pw_reports"], function () {
+            chrome.storage.local.set({ "pw-reports-idb-v1": "1" }, function () {
+              if (cb) cb();
+            });
+          });
+        };
+        tx.onerror = function (e) {
+          console.error("pw-ext: report migration failed, chrome.storage preserved", e);
+          if (cb) cb();
+        };
       });
     });
   }
@@ -293,41 +383,65 @@ if (isPlaywrightReport()) {
    *                       report {object} — the report for the current URL
    *                       (never null — falls back to a fresh empty object)
    */
+  /* getReport / saveReport / getAllReports / purgeOldReports
+     All backed by IndexedDB "reports" store (page-origin scoped).
+     Data survives extension reinstalls, ID changes, and Web Store migration. */
+
   function getReport(cb) {
     var url = getReportUrl();
-    chrome.storage.local.get(["pw_reports"], function (data) {
-      var reports = data.pw_reports || {};
-      var report  = reports[url] || { url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() };
-      cb(report);
+    openDb(function (db) {
+      if (!db) { cb({ url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() }); return; }
+      var req = db.transaction("reports", "readonly").objectStore("reports").get(url);
+      req.onsuccess = function () {
+        cb(req.result || { url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() });
+      };
+      req.onerror = function () {
+        cb({ url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() });
+      };
+    });
+  }
+
+  /**
+   * getAllReports(cb)
+   * Returns all stored reports as a plain map { url: reportObject }.
+   * Used by multi-banner export and carryover features that need cross-report data.
+   */
+  function getAllReports(cb) {
+    openDb(function (db) {
+      if (!db) { cb({}); return; }
+      var req = db.transaction("reports", "readonly").objectStore("reports").getAll();
+      req.onsuccess = function () {
+        var map = {};
+        (req.result || []).forEach(function (r) { map[r.url] = r; });
+        cb(map);
+      };
+      req.onerror = function () { cb({}); };
     });
   }
 
   /**
    * saveReport(report, cb)
    * ----------------------
-   * Writes a report object back to chrome.storage.local under its URL key.
+   * Writes a report object to the IndexedDB "reports" store, keyed by report.url.
    * Always stamps lastAccessed to now before saving (keeps TTL fresh).
-   *
-   * Reads the whole pw_reports map first (to avoid overwriting other reports),
-   * updates just the entry for report.url, then writes the whole map back.
    *
    * @param {object}   report  The report object to save.
    *                           Must have: { url, scraped[], labels{}, ... }
-   *                           report.url is used as the storage key.
-   * @param {function} [cb]    Optional callback, called after write completes.
-   *                           Called even if write fails (error is only logged).
+   *                           report.url is used as the IDB key.
+   * @param {function} [cb]    Optional callback: cb(null) on success, cb(err) on failure.
    */
+  /* cb(null) on success, cb(err) on failure — callers that ignore the arg are unaffected */
   function saveReport(report, cb) {
-    chrome.storage.local.get(["pw_reports"], function (data) {
-      var reports = data.pw_reports || {};
+    openDb(function (db) {
+      if (!db) { if (cb) cb(new Error("IDB unavailable")); return; }
       report.lastAccessed = new Date().toISOString();
-      reports[report.url] = report;
-      chrome.storage.local.set({ pw_reports: reports }, function () {
-        if (chrome.runtime.lastError) {
-          console.error("pw-ext: save failed -", chrome.runtime.lastError.message);
-        }
-        if (cb) cb();
-      });
+      var tx = db.transaction("reports", "readwrite");
+      tx.objectStore("reports").put(report);
+      tx.oncomplete = function () { if (cb) cb(null); };
+      tx.onerror    = function (e) {
+        console.error("pw-ext: saveReport failed", e);
+        if (cb) cb(e);
+      };
     });
   }
 
@@ -337,37 +451,51 @@ if (isPlaywrightReport()) {
    * Deletes any reports from chrome.storage.local whose lastAccessed timestamp
    * is older than REPORT_TTL_DAYS (10 days) from now.
    *
-   * Called at init() start, inside a callback, so the purge completes BEFORE
-   * getReport() reads storage. This ordering prevents stale data being served.
+   * Called at init() start, before getReport(), so stale entries are removed
+   * before any read occurs. This ordering prevents stale data being served.
    *
    * How it works:
-   *  - Reads pw_reports
+   *  - Reads all reports from IDB "reports" store
    *  - Calculates cutoff = now - 10 days (in ms)
-   *  - Loops all keys, deletes any with lastAccessed < cutoff
-   *  - Writes back only if something was deleted (avoids unnecessary writes)
+   *  - Deletes any reports with lastAccessed < cutoff
+   *  - Warns the user if labeled entries were purged
    *
    * @param {function} [cb]  Optional callback, always called when done
    *                         (whether or not anything was deleted)
    */
   function purgeOldReports(cb) {
-    chrome.storage.local.get(["pw_reports"], function (data) {
-      var reports = data.pw_reports || {};
-      var cutoff  = Date.now() - (REPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
-      var changed = false;
-      Object.keys(reports).forEach(function (url) {
-        var ts = new Date(reports[url].lastAccessed || 0).getTime();
-        if (ts < cutoff) {
-          delete reports[url];
-          changed = true;
-        }
-      });
-      if (changed) {
-        chrome.storage.local.set({ pw_reports: reports }, function () {
-          if (cb) cb();
+    openDb(function (db) {
+      if (!db) { if (cb) cb(); return; }
+      var req = db.transaction("reports", "readonly").objectStore("reports").getAll();
+      req.onsuccess = function () {
+        var all    = req.result || [];
+        var cutoff = Date.now() - (REPORT_TTL_DAYS * 24 * 60 * 60 * 1000);
+        var stale  = all.filter(function (r) {
+          return new Date(r.lastAccessed || 0).getTime() < cutoff;
         });
-      } else {
-        if (cb) cb();
-      }
+        if (!stale.length) { if (cb) cb(); return; }
+
+        /* BUG-20: count labels about to be deleted so we can warn the user */
+        var purgedLabels = stale.reduce(function (n, r) {
+          return n + Object.keys(r.labels || {}).length;
+        }, 0);
+
+        var tx    = db.transaction("reports", "readwrite");
+        var store = tx.objectStore("reports");
+        stale.forEach(function (r) { store.delete(r.url); });
+        tx.oncomplete = function () {
+          if (purgedLabels > 0 && typeof showToast === "function") {
+            showToast(
+              "\u26a0 " + purgedLabels + " labeled entr" + (purgedLabels === 1 ? "y" : "ies") +
+              " from old builds purged (>10 days). Export before they expire.",
+              "warning"
+            );
+          }
+          if (cb) cb();
+        };
+        tx.onerror = function () { if (cb) cb(); };
+      };
+      req.onerror = function () { if (cb) cb(); };
     });
   }
 
@@ -548,6 +676,7 @@ if (isPlaywrightReport()) {
     currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */
     lastUrl:           location.href,
     scraping:          false,
+    saving:            false,  /* BUG-03: guard against double-save race on rapid Enter/click */
     listenersAttached: false,
     testCache:         {}     /* testId → {sc, name, result} — built from list-view rows on init */
   };
@@ -682,8 +811,10 @@ if (isPlaywrightReport()) {
        Must complete before renderLabelChips/refreshCount so chips don't render
        from an empty IndexedDB while migration is still writing old data. */
     migrateRcaToIndexedDb(function () {
-      refreshCount();       /* form.js */
-      renderLabelChips();   /* form.js */
+      migrateReportsToIndexedDb(function () {
+        refreshCount();       /* form.js */
+        renderLabelChips();   /* form.js */
+      });
     });
 
     /* Purge old reports first, then read storage — guarantees purge wins */
