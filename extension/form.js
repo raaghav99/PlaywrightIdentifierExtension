@@ -1070,7 +1070,9 @@ function saveEntry() {
              of creating a duplicate. currentTestId cleared — key is now set. */
           state.editingKey    = key;
           state.currentTestId = null;
-          document.getElementById("pw-save-btn").textContent              = "Update";
+          var saveBtn = document.getElementById("pw-save-btn");
+          saveBtn.textContent = "Update";
+          saveBtn.blur();
           document.getElementById("pw-delete-current-btn").style.display = "";
           if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
           showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
