@@ -354,6 +354,363 @@ if (isPlaywrightReport()) {
     });
   }
 
+  /* ======================================================
+     DASHBOARD DATA PIPELINE
+     Four functions used by the Dashboard tab:
+       loadErrorPatterns  — fetch error-patterns.json once per session
+       blobExtract        — parse the ZIP blob embedded in the report page
+       matchPattern       — match an error message against loaded patterns
+       buildGroupIndex    — group FAIL tests by pattern or failed step
+     ====================================================== */
+
+
+  /* --- ZIP / blob helpers --- */
+
+  /* Recursively collect test result objects (have .testId + .results) */
+  function _gatherTests(val, acc) {
+    if (!val || typeof val !== "object") return;
+    if (Array.isArray(val)) { val.forEach(function (v) { _gatherTests(v, acc); }); return; }
+    if (typeof val.testId === "string" && Array.isArray(val.results)) { acc.push(val); return; }
+    Object.keys(val).forEach(function (k) { _gatherTests(val[k], acc); });
+  }
+
+  /* Walk a steps array recursively; return title of deepest failed step.
+     Playwright's blob format marks failures with step.error (an object),
+     NOT step.result.status. Both checks kept for forward-compat. */
+  function _findFailedStep(steps) {
+    var deepest = "";
+    for (var i = 0; i < steps.length; i++) {
+      var s = steps[i];
+      var failed = s && (s.error ||
+                         (s.result && s.result.status === "failed") ||
+                         s.duration < 0); /* negative duration = timed-out step */
+      if (failed) deepest = (s && s.title) || deepest;
+      if (s && s.steps && s.steps.length) {
+        var sub = _findFailedStep(s.steps);
+        if (sub) deepest = sub;
+      }
+    }
+    return deepest;
+  }
+
+  /* Decompress a deflate-raw Uint8Array and parse the result as JSON.
+     Uses Blob.stream().pipeThrough() which handles backpressure correctly
+     for large entries — the manual writer approach silently drops big chunks. */
+  function _decompressJson(data) {
+    try {
+      var ds     = new DecompressionStream("deflate-raw");
+      var stream = new Blob([data]).stream().pipeThrough(ds);
+      return new Response(stream).json();
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  /**
+   * blobExtract(cb)
+   * Finds window.playwrightReportBase64 in a <script> tag, decodes the ZIP,
+   * walks every .json entry, and populates state.blobData as a Map:
+   *   Map<testId, { errorMsg, failedStepTitle }>
+   * Sets state.blobData = null on any unrecoverable error.
+   */
+  function blobExtract(cb) {
+    /* Already ran this page load (success or failure) — skip.
+       Use false as "not yet tried" so null can mean "tried, failed". */
+    if (state.blobData !== false) { cb(); return; }
+
+    var b64 = null;
+
+    /* ── Method 0 (fastest): blob-capture.js already grabbed it at document_start
+       before Playwright's SPA called el.remove(). ── */
+    if (window.__pwExtBlobB64) {
+      b64 = window.__pwExtBlobB64;
+    }
+
+    /* ── Method 1 (standard): <script id="playwrightReportBase64" type="application/zip">
+       Playwright 1.36+ stores the blob as textContent of a typed script element.
+       Falls through if the SPA already removed it. ── */
+    if (!b64) {
+      var el = document.getElementById("playwrightReportBase64");
+      if (el && el.textContent) {
+        b64 = el.textContent.trim();
+      }
+    }
+
+    /* ── Method 2 (legacy): window.playwrightReportBase64 = "data:..." assignment ── */
+    if (!b64) {
+      var scripts = document.querySelectorAll("script");
+      for (var i = 0; i < scripts.length; i++) {
+        var text = scripts[i].textContent || "";
+        /* Only search scripts that contain the exact assignment form */
+        var vi = text.indexOf("window.playwrightReportBase64");
+        if (vi === -1) continue;
+        var ei = text.indexOf("=", vi + 29); /* skip past the variable name */
+        if (ei === -1) continue;
+        var qi = ei + 1;
+        while (qi < text.length && (text[qi] === " " || text[qi] === "\t")) qi++;
+        var qc = text[qi];
+        if (qc !== '"' && qc !== "'" && qc !== "`") continue;
+        var qe = text.indexOf(qc, qi + 1);
+        if (qe === -1) continue;
+        b64 = text.slice(qi + 1, qe);
+        break;
+      }
+    }
+
+    if (!b64) {
+      /* ── Method 3: fetch raw HTML source and regex-extract from original markup.
+         React SPA may have already removed the script element from the live DOM by
+         the time document_idle fires, but the bytes are still in the source. ── */
+      fetch(location.href)
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var m = html.match(/<script[^>]+id="playwrightReportBase64"[^>]*>([^<]+)<\/script>/);
+          if (m && m[1]) {
+            b64 = m[1].trim().replace(/^data:[^;]+;base64,/, "");
+            _processBlobBytes(b64, cb);
+          } else {
+            console.warn("pw-ext: playwrightReportBase64 not found — Dashboard will show scraped-only data");
+            state.blobData = null; cb();
+          }
+        })
+        .catch(function () {
+          console.warn("pw-ext: playwrightReportBase64 not found — Dashboard will show scraped-only data");
+          state.blobData = null; cb();
+        });
+      return; /* async path — _processBlobBytes will call cb() */
+    }
+
+    _processBlobBytes(b64, cb);
+  }
+
+  /* Shared by sync (Methods 1/2) and async (Method 3) paths of blobExtract. */
+  function _processBlobBytes(b64, cb) {
+    /* Strip data-URI prefix if present */
+    b64 = b64.replace(/^data:[^;]+;base64,/, "");
+
+    var bytes;
+    try {
+      var bin = atob(b64);
+      bytes = new Uint8Array(bin.length);
+      for (var j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+    } catch (e) { state.blobData = null; cb(); return; }
+
+    /* Standard ZIP handling: Walk the Central Directory at the end of the file.
+       The Local File Header walker is unreliable if compSize=0 (Data Descriptors). */
+    var eocdPos = -1;
+    for (var i = bytes.length - 22; i >= 0; i--) {
+      if (bytes[i] === 0x50 && bytes[i+1] === 0x4B && bytes[i+2] === 0x05 && bytes[i+3] === 0x06) {
+        eocdPos = i;
+        break;
+      }
+    }
+
+    var promises = [];
+
+    if (eocdPos !== -1) {
+      /* 1. Walk Central Directory entries */
+      var cdCount  = (bytes[eocdPos + 10] | (bytes[eocdPos + 11] << 8));
+      var cdOffset = (bytes[eocdPos + 16] | (bytes[eocdPos + 17] << 8) |
+                      (bytes[eocdPos + 18] << 16) | (bytes[eocdPos + 19] << 24)) >>> 0;
+      var pos = cdOffset;
+      for (var k = 0; k < cdCount; k++) {
+        if (pos + 46 > bytes.length) break;
+        if (bytes[pos] !== 0x50 || bytes[pos+1] !== 0x4B || bytes[pos+2] !== 0x01 || bytes[pos+3] !== 0x02) break;
+
+        var method   = bytes[pos + 10] | (bytes[pos + 11] << 8);
+        var compSize = (bytes[pos + 20] | (bytes[pos + 21] << 8) | (bytes[pos + 22] << 16) | (bytes[pos + 23] << 24)) >>> 0;
+        var fnLen    = bytes[pos + 28] | (bytes[pos + 29] << 8);
+        var exLen    = bytes[pos + 30] | (bytes[pos + 31] << 8);
+        var fcLen    = bytes[pos + 32] | (bytes[pos + 33] << 8);
+        var lfhOff   = (bytes[pos + 42] | (bytes[pos + 43] << 8) | (bytes[pos + 44] << 16) | (bytes[pos + 45] << 24)) >>> 0;
+
+        var fname = "";
+        for (var f = 0; f < fnLen; f++) fname += String.fromCharCode(bytes[pos + 46 + f]);
+
+        if (fname.slice(-5) === ".json" && lfhOff + 30 < bytes.length) {
+          var lfh_fnLen = bytes[lfhOff + 26] | (bytes[lfhOff + 27] << 8);
+          var lfh_exLen = bytes[lfhOff + 28] | (bytes[lfhOff + 29] << 8);
+          var dataStart = lfhOff + 30 + lfh_fnLen + lfh_exLen;
+          if (dataStart + compSize <= bytes.length) {
+            var slice = bytes.slice(dataStart, dataStart + compSize);
+            if (method === 8) {
+              promises.push(_decompressJson(slice).catch(function () { return null; }));
+            } else {
+              (function (s) {
+                promises.push(Promise.resolve().then(function () {
+                  try { return JSON.parse(new TextDecoder().decode(s)); } catch (e) { return null; }
+                }));
+              })(slice);
+            }
+          }
+        }
+        pos += 46 + fnLen + exLen + fcLen;
+      }
+    } else {
+      /* Fallback to simple Local Header walker (legacy or malformed ZIP) */
+      var pos = 0;
+      while (pos + 30 <= bytes.length) {
+        if (bytes[pos] !== 0x50 || bytes[pos + 1] !== 0x4B) break;
+        if (bytes[pos + 2] !== 0x03 || bytes[pos + 3] !== 0x04) break;
+
+        var method   = bytes[pos + 8]  | (bytes[pos + 9]  << 8);
+        var compSize = (bytes[pos + 18] | (bytes[pos + 19] << 8) |
+                       (bytes[pos + 20] << 16) | (bytes[pos + 21] << 24)) >>> 0;
+        var fnLen    = bytes[pos + 26] | (bytes[pos + 27] << 8);
+        var exLen    = bytes[pos + 28] | (bytes[pos + 29] << 8);
+        var dataStart = pos + 30 + fnLen + exLen;
+
+        var fname = "";
+        for (var k = 0; k < fnLen; k++) fname += String.fromCharCode(bytes[pos + 30 + k]);
+
+        if (fname.slice(-5) === ".json") {
+          var slice = bytes.slice(dataStart, dataStart + compSize);
+          if (method === 8) {
+            promises.push(_decompressJson(slice).catch(function () { return null; }));
+          } else {
+            (function (s) {
+              promises.push(Promise.resolve().then(function () {
+                try { return JSON.parse(new TextDecoder().decode(s)); } catch (e) { return null; }
+              }));
+            })(slice);
+          }
+        }
+
+        pos = dataStart + compSize;
+        if (compSize === 0) break;
+      }
+    }
+
+    if (!promises.length) { state.blobData = new Map(); cb(); return; }
+
+    Promise.all(promises).then(function (jsons) {
+      state.blobData = new Map();
+      jsons.forEach(function (json) {
+        if (!json) return;
+        var tests = [];
+        _gatherTests(json, tests);
+        tests.forEach(function (test) {
+          var results = test.results || [];
+          var last    = results[results.length - 1] || {};
+          var errs    = last.errors || [];
+          var rawMsg  = (errs[0] && errs[0].message) ? errs[0].message : "";
+
+          /* Strip ANSI escape codes — Playwright injects colour codes into
+             expect() failure messages: [31m, [2m, [22m, [39m etc. */
+          var errorMsg = rawMsg.replace(/\x1b\[[\d;]*m/g, "").replace(/\[[0-9;]+m/g, "");
+
+          /* Don't overwrite a rich entry with the sparse data from report.json
+             (report.json has 98 tests but results contain only attachments,
+             no errors or steps — it is processed last in the ZIP and would
+             clobber the per-file entries that have full data). */
+          if (!errorMsg && state.blobData.has(test.testId)) return;
+
+          var failedStepTitle = _findFailedStep(last.steps || []);
+
+          /* Fallback: infer failing action from the error message first line.
+             Playwright errors follow "<Class>.<method>: ..." conventions. */
+          if (!failedStepTitle && errorMsg) {
+            var line = errorMsg.split("\n")[0]
+              .replace(/^(TimeoutError|ReferenceError|TypeError|RangeError|Error):\s*/i, "");
+            /* Direct: "locator.click:" or "browserContext.waitForEvent:" */
+            var m1 = line.match(/^([\w]+\.[\w]+):/);
+            if (m1) { failedStepTitle = m1[1]; }
+            /* Nested: "Element click failed: locator.waitFor:" */
+            else {
+              var m2 = line.match(/:\s*([\w]+\.[\w]+):/);
+              if (m2) { failedStepTitle = m2[1]; }
+              /* expect(locator).toBeVisible() */
+              else {
+                var m3 = line.match(/expect\([^)]*\)\.([\w]+)\s*\(/);
+                if (m3) { failedStepTitle = "expect." + m3[1]; }
+                else if (/test timeout/i.test(line)) { failedStepTitle = "Test Timeout"; }
+              }
+            }
+          }
+
+          state.blobData.set(test.testId, { errorMsg: errorMsg, failedStepTitle: failedStepTitle });
+        });
+      });
+      console.log("pw-ext: blobExtract done — " + state.blobData.size + " tests indexed");
+      cb();
+    }).catch(function (e) {
+      console.error("pw-ext: blobExtract failed", e);
+      state.blobData = null;
+      cb();
+    });
+  }
+
+  /**
+   * _extractLocatorSig(errorMsg)
+   * Extracts the most specific identifier from a Playwright error message.
+   * Priority: "Locator:" line > "waiting for locator(...)" > any locator(...) chain
+   * Falls back to the first meaningful line of the error.
+   */
+  function _extractLocatorSig(errorMsg) {
+    if (!errorMsg) return "";
+    /* "Locator: locator('...')" line from expect-style errors */
+    var m1 = errorMsg.match(/Locator:\s*(.+)/);
+    if (m1) return m1[1].trim();
+    /* "waiting for locator('...')" in call log */
+    var m2 = errorMsg.match(/waiting for (locator\(.+)/);
+    if (m2) return m2[1].trim();
+    /* Any locator(...) chain anywhere in the message */
+    var m3 = errorMsg.match(/locator\([^)]+\)(?:\.(?:locator\([^)]+\)|contentFrame\(\)|first\(\)|last\(\)|nth\([^)]*\)|filter\([^)]*\)))*(?:\.\w+\([^)]*\))*/);
+    if (m3) return m3[0];
+    return "";
+  }
+
+  /**
+   * buildGroupIndex(report, cb)
+   * Groups all FAIL tests from report.scraped into two Maps:
+   *   byError — keyed by the error/locator signature (what actually broke)
+   *   byStep  — keyed by the failing step title
+   * Marks tests that already have a saved label so the UI can dim them.
+   * Stores result in state.groupIndex and calls cb().
+   */
+  function buildGroupIndex(report, cb) {
+    var byError = new Map();
+    var byStep  = new Map();
+    var labels  = report.labels || {};
+
+    (report.scraped || []).forEach(function (entry) {
+      if (entry.result !== "FAIL") return;
+      var testId     = entry.testId || entry.id;
+      var blobEntry  = state.blobData ? state.blobData.get(testId) : null;
+      var errorMsg        = blobEntry ? blobEntry.errorMsg        : "";
+      var failedStepTitle = blobEntry ? blobEntry.failedStepTitle : "";
+      var labeled    = !!(labels[entry.sc + "|" + entry.name]);
+
+      /* byError — locator sig → failing step/method → raw first error line.
+         Never use a generic fallback: if nothing is extractable, skip. */
+      var errKey = _extractLocatorSig(errorMsg)
+        || failedStepTitle
+        || (errorMsg ? errorMsg.split("\n")[0].trim() : "");
+      if (!errKey) {
+        /* Truly no error info (blob not available for this test) — skip */
+        return;
+      }
+      if (!byError.has(errKey)) {
+        byError.set(errKey, { label: errKey, tests: [] });
+      }
+      byError.get(errKey).tests.push(
+        { testId: testId, sc: entry.sc, name: entry.name,
+          errorMsg: errorMsg, failedStepTitle: failedStepTitle, labeled: labeled });
+
+      /* byStep — group by the failing step title; skip if none */
+      var stepKey = failedStepTitle || errKey; /* fall back to errKey, never a generic label */
+      if (!byStep.has(stepKey)) {
+        byStep.set(stepKey, { label: stepKey, tests: [] });
+      }
+      byStep.get(stepKey).tests.push(
+        { testId: testId, sc: entry.sc, name: entry.name,
+          errorMsg: errorMsg, failedStepTitle: failedStepTitle, labeled: labeled });
+    });
+
+    state.groupIndex = { byError: byError, byStep: byStep };
+    cb();
+  }
+
   /*
    * REPORT_TTL_DAYS
    * ---------------
@@ -678,7 +1035,9 @@ if (isPlaywrightReport()) {
     scraping:          false,
     saving:            false,  /* BUG-03: guard against double-save race on rapid Enter/click */
     listenersAttached: false,
-    testCache:         {}     /* testId → {sc, name, result} — built from list-view rows on init */
+    testCache:         {},    /* testId → {sc, name, result} — built from list-view rows on init */
+    blobData:          false, /* false=not tried; null=tried+failed; Map=success */
+    groupIndex:        null   /* { byError: Map, byStep: Map } — built on Dashboard open */
   };
 
   /**

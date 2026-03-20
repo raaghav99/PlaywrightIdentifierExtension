@@ -221,6 +221,10 @@ function attachListeners() {
       renderRcaLibrary();
     }
   });
+  document.getElementById("pw-tab-dash").addEventListener("click", function () {
+    showView("dash");
+    renderDashboard();
+  });
 
   /* Form actions */
   document.getElementById("pw-save-btn").addEventListener("click", saveEntry);
@@ -294,6 +298,69 @@ function attachListeners() {
   document.getElementById("pw-date-filter-input").addEventListener("change", function () {
     getReport(function (r) { renderList(r); });
   });
+
+  /* Dashboard — init date field to today */
+  (function () {
+    var d = document.getElementById("pw-dash-date-input");
+    if (d) d.value = getStickyDate();
+  })();
+
+  /* Dashboard — delegated listeners on #pw-group-list */
+  var groupList = document.getElementById("pw-group-list");
+  groupList.addEventListener("click", function (e) {
+    var navBtn = e.target.closest(".pw-group-nav");
+    if (navBtn) { e.stopPropagation(); location.hash = "?testId=" + navBtn.dataset.testid; return; }
+    if (e.target.classList && e.target.classList.contains("pw-group-select-all")) return;
+    var header = e.target.closest(".pw-group-header");
+    if (header) {
+      var card    = header.parentElement;
+      var body    = card && card.querySelector(".pw-group-body");
+      var chevron = header.querySelector(".pw-group-chevron");
+      if (body) {
+        var open = body.style.display !== "none";
+        body.style.display = open ? "none" : "block";
+        if (chevron) chevron.style.transform = open ? "" : "rotate(90deg)";
+      }
+    }
+  });
+  groupList.addEventListener("change", function (e) {
+    if (!e.target || e.target.type !== "checkbox") return;
+    if (e.target.classList.contains("pw-group-select-all")) {
+      var card    = e.target.closest(".pw-group-card");
+      var checked = e.target.checked;
+      if (card) {
+        card.querySelectorAll("input[type=checkbox][data-testid]").forEach(function (cb) { cb.checked = checked; });
+      }
+    } else {
+      var card = e.target.closest(".pw-group-card");
+      if (card) {
+        var all = card.querySelectorAll("input[type=checkbox][data-testid]");
+        var chk = card.querySelectorAll("input[type=checkbox][data-testid]:checked");
+        var sa  = card.querySelector(".pw-group-select-all");
+        if (sa) { sa.checked = chk.length === all.length; sa.indeterminate = chk.length > 0 && chk.length < all.length; }
+      }
+    }
+    _updateDashCount();
+  });
+
+  /* Global Select All */
+  document.getElementById("pw-dash-select-all").addEventListener("click", function () {
+    var unchecked = groupList.querySelectorAll("input[type=checkbox][data-testid]:not(:checked):not(:disabled)");
+    if (unchecked.length > 0) {
+      groupList.querySelectorAll("input[type=checkbox][data-testid]:not(:disabled)").forEach(function (cb) { cb.checked = true; });
+      groupList.querySelectorAll(".pw-group-select-all").forEach(function (sa) { sa.checked = true; sa.indeterminate = false; });
+    } else {
+      groupList.querySelectorAll("input[type=checkbox]").forEach(function (cb) { cb.checked = false; cb.indeterminate = false; });
+    }
+    _updateDashCount();
+  });
+
+  /* Search box — filter groups/tests in real-time */
+  document.getElementById("pw-dash-search").addEventListener("input", function () {
+    _filterDashboard(this.value.trim().toLowerCase());
+  });
+
+  document.getElementById("pw-dash-apply-btn").addEventListener("click", _applyBulkRca);
 
   /* Stop Playwright keyboard handlers from firing inside panel */
   var panel = document.getElementById("pw-ext-panel");
@@ -1388,9 +1455,11 @@ function showView(view) {
   document.getElementById("pw-form-section").style.display = view === "form" ? "flex" : "none";
   document.getElementById("pw-list-section").style.display = view === "list" ? "flex" : "none";
   document.getElementById("pw-rca-section").style.display  = view === "rca"  ? "flex" : "none";
+  document.getElementById("pw-dash-section").style.display = view === "dash" ? "flex" : "none";
   document.getElementById("pw-tab-form").classList.toggle("active", view === "form");
   document.getElementById("pw-tab-list").classList.toggle("active", view === "list");
   document.getElementById("pw-tab-rca").classList.toggle("active",  view === "rca");
+  document.getElementById("pw-tab-dash").classList.toggle("active", view === "dash");
 }
 
 /* ======================================================
@@ -1492,6 +1561,223 @@ function renderRcaLibrary() {
             showToast("RCA entry removed", "warning");
           });
         });
+      });
+    });
+  });
+}
+
+/* ======================================================
+   DASHBOARD — FAILURE GROUPS
+   ====================================================== */
+
+/*
+ * _dashGroups
+ * -----------
+ * The sorted array of groups last rendered by _renderGroups().
+ * Stored at module scope so _applyBulkRca can look up group data
+ * by the data-gi index without re-sorting.
+ */
+var _dashGroups = null;
+
+/**
+ * renderDashboard()
+ * Called when the Dashboard tab is clicked.
+ * If state.groupIndex is already built, renders immediately.
+ * Otherwise chains: loadErrorPatterns → blobExtract → getReport → buildGroupIndex → render.
+ */
+function renderDashboard() {
+  if (state.groupIndex) { _renderGroups(state.groupIndex); return; }
+  var list = document.getElementById("pw-group-list");
+  list.innerHTML = '<div class="pw-list-empty">Loading\u2026</div>';
+  blobExtract(function () {
+    getReport(function (report) {
+      buildGroupIndex(report, function () {
+        _renderGroups(state.groupIndex);
+      });
+    });
+  });
+}
+
+/**
+ * _renderGroups(groupIndex)
+ * Renders collapsible group cards into #pw-group-list.
+ * Reads the #pw-dash-groupby value to pick byPattern or byStep map.
+ * Groups are sorted by test count descending.
+ */
+function _updateDashCount() {
+  var groupList = document.getElementById("pw-group-list");
+  var n      = groupList ? groupList.querySelectorAll("input[type=checkbox][data-testid]:checked").length : 0;
+  var footer = document.getElementById("pw-dash-footer");
+  var btn    = document.getElementById("pw-dash-apply-btn");
+  if (btn)    btn.textContent = "Apply to " + n + " selected";
+  if (footer) footer.style.display = n > 0 ? "flex" : "none";
+}
+
+function _filterDashboard(q) {
+  var cards = document.querySelectorAll("#pw-group-list .pw-group-card");
+  cards.forEach(function (card) {
+    if (!q) { card.style.display = ""; return; }
+    /* Match on group label (error/locator) OR any test name/SC */
+    var label  = (card.querySelector(".pw-group-label") || {}).textContent || "";
+    var rows   = card.querySelectorAll(".pw-group-test-row");
+    var anyRow = false;
+    rows.forEach(function (row) {
+      var text = row.textContent.toLowerCase();
+      var hit  = text.indexOf(q) !== -1;
+      row.style.display = hit ? "" : "none";
+      if (hit) anyRow = true;
+    });
+    var labelHit = label.toLowerCase().indexOf(q) !== -1;
+    if (labelHit) { rows.forEach(function (r) { r.style.display = ""; }); }
+    card.style.display = (labelHit || anyRow) ? "" : "none";
+    /* Auto-expand matched cards */
+    if (q && (labelHit || anyRow)) {
+      var body    = card.querySelector(".pw-group-body");
+      var chevron = card.querySelector(".pw-group-chevron");
+      if (body && body.style.display === "none") {
+        body.style.display = "block";
+        if (chevron) chevron.style.transform = "rotate(90deg)";
+      }
+    }
+  });
+}
+
+function _renderGroups(groupIndex) {
+  var list = document.getElementById("pw-group-list");
+  if (!list) return;
+  var map  = groupIndex.byError;
+
+  var groups = [];
+  map.forEach(function (val) { groups.push(val); });
+  /* Sort: most unlabeled tests first, then total count */
+  groups.sort(function (a, b) {
+    var au = a.tests.filter(function (t) { return !t.labeled; }).length;
+    var bu = b.tests.filter(function (t) { return !t.labeled; }).length;
+    return bu !== au ? bu - au : b.tests.length - a.tests.length;
+  });
+  _dashGroups = groups;
+
+  if (!groups.length) {
+    list.innerHTML = '<div class="pw-list-empty">No failed tests found in this report.</div>';
+    return;
+  }
+
+  var html = [];
+  groups.forEach(function (group, gi) {
+    var unlabeled = group.tests.filter(function (t) { return !t.labeled; }).length;
+    var allDone   = unlabeled === 0;
+    html.push('<div class="pw-group-card' + (allDone ? ' pw-group-done' : '') + '">');
+    html.push('<div class="pw-group-header">');
+    html.push('<span class="pw-group-chevron">\u25b6</span>');
+    html.push('<input type="checkbox" class="pw-group-select-all" data-gi="' + gi + '" title="Select all unlabeled">');
+    html.push('<span class="pw-group-label" title="' + esc(group.label) + '">' + esc(group.label) + '</span>');
+    if (allDone) {
+      html.push('<span class="pw-group-done-badge">\u2713 done</span>');
+    } else {
+      html.push('<span class="pw-group-count">' + unlabeled + '</span>');
+    }
+    html.push('</div>');
+    html.push('<div class="pw-group-body" style="display:none">');
+    group.tests.forEach(function (t) {
+      html.push('<label class="pw-group-test-row' + (t.labeled ? ' pw-row-labeled' : '') + '">');
+      html.push('<input type="checkbox" data-testid="' + esc(t.testId) + '" data-gi="' + gi + '"' + (t.labeled ? ' disabled' : '') + '>');
+      html.push('<span class="pw-group-sc">' + esc(t.sc) + '</span>');
+      html.push('<span class="pw-group-name" title="' + esc(t.name) + '">' + esc(t.name) + '</span>');
+      if (t.labeled) {
+        html.push('<span class="pw-row-done-icon" title="Already labeled">\u2713</span>');
+      }
+      html.push('<button class="pw-group-nav" data-testid="' + esc(t.testId) + '" title="Go to test">\u2197</button>');
+      html.push('</label>');
+    });
+    html.push('</div>');
+    html.push('</div>');
+  });
+  list.innerHTML = html.join("");
+
+  /* Reset footer */
+  _resetDashFooter();
+}
+
+function _resetDashFooter() {
+  var footer = document.getElementById("pw-dash-footer");
+  var btn    = document.getElementById("pw-dash-apply-btn");
+  var d      = document.getElementById("pw-dash-date-input");
+  if (footer) footer.style.display = "none";
+  if (btn)    btn.textContent = "Apply to 0 selected";
+  if (d && !d.value) d.value = getStickyDate();
+}
+
+/**
+ * _applyBulkRca()
+ * Reads the label + category inputs from the footer, writes them to
+ * report.labels for every checked test, then rebuilds the groupIndex
+ * so labeled tests are marked done without a full page reload.
+ */
+function _applyBulkRca() {
+  if (!_dashGroups) return;
+  var labelVal    = (document.getElementById("pw-dash-label-input")    || {}).value || "";
+  var categoryVal = (document.getElementById("pw-dash-category-input") || {}).value || "";
+  var ownerVal    = (document.getElementById("pw-dash-owner-input")    || {}).value || "";
+  var jiraVal     = (document.getElementById("pw-dash-jira-input")     || {}).value || "";
+  var dateEl      = document.getElementById("pw-dash-date-input");
+  var dateVal     = (dateEl && dateEl.value) || getStickyDate();
+
+  labelVal    = labelVal.trim();
+  categoryVal = categoryVal.trim();
+  ownerVal    = ownerVal.trim();
+  jiraVal     = jiraVal.trim();
+
+  if (!labelVal) {
+    var li = document.getElementById("pw-dash-label-input");
+    if (li) li.focus();
+    showToast("Enter an RCA label first", "error");
+    return;
+  }
+
+  var list       = document.getElementById("pw-group-list");
+  var checkboxes = list.querySelectorAll("input[type=checkbox][data-testid]:checked");
+  var selected   = [];
+  checkboxes.forEach(function (cb) {
+    var testId = cb.dataset.testid;
+    var gi     = parseInt(cb.dataset.gi, 10);
+    var group  = _dashGroups[gi];
+    if (!group) return;
+    for (var i = 0; i < group.tests.length; i++) {
+      if (group.tests[i].testId === testId) {
+        selected.push({ sc: group.tests[i].sc, name: group.tests[i].name });
+        break;
+      }
+    }
+  });
+
+  if (!selected.length) return;
+
+  var now = new Date().toISOString();
+  getReport(function (report) {
+    selected.forEach(function (item) {
+      report.labels[item.sc + "|" + item.name] = {
+        label:     labelVal,
+        category:  categoryVal,
+        owner:     ownerVal,
+        jira:      jiraVal,
+        labelDate: isoToDdMm(dateVal),
+        timestamp: now,
+        sc:        item.sc,
+        name:      item.name
+      };
+    });
+    saveReport(report, function () {
+      refreshCount();
+      renderLabelChips();
+      showToast(selected.length + " labeled \u2014 " + labelVal, "success");
+      /* Persist sticky date */
+      if (dateEl && dateEl.value) {
+        try { localStorage.setItem("pw-sticky-date", dateEl.value); } catch (e) {}
+      }
+      /* Rebuild so labeled tests turn grey in-place */
+      state.groupIndex = null;
+      buildGroupIndex(report, function () {
+        _renderGroups(state.groupIndex);
       });
     });
   });

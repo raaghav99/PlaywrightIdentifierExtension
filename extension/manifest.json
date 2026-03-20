@@ -1,14 +1,31 @@
 {
   "manifest_version": 3,
   "name": "Playwright RCA Helper",
-  "version": "2.7.1",
+  "version": "2.8.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4/CyB5OZeg5dsoF/IODbDw3Mf42n0ALTCVe6bLKg6szL+5BBsWwU5TdAYdbWtPsbGdqPZRKG8eLe5hYu1SLJW5kEuTAsoxxQwO/TwZFYFryaYUstDHzQeoNEs56gQW9cXA6iChhGZe99e47CcKfKf9TIRaS8MhPcxFO6Sd91gbCBXX5t4scEHB58qzdrh4fLtl5hYEWakf5XOrG60t7NXr9kPtG7FDAcvJbAeKFFm9omilc59lxvLc6ELT1gG5tZ51cgZz5wGb5/9kT2hSoYLb1H0Cux5ZBUHHXqbK+uCZIhKQYa7+/4L6glT7iBM/WrespAQ1r2OYoryPBEeI8GPQIDAQAB",
   "description": "Label, analyse and export Playwright test results with RCA tracking directly from the HTML report",
   "icons": {
     "48": "icons/icon48.png"
   },
   "permissions": ["storage"],
+  "web_accessible_resources": [
+    { "resources": ["error-patterns.json"], "matches": ["<all_urls>"] }
+  ],
   "content_scripts": [
+    {
+      "matches": [
+        "file:///*",
+        "http://localhost/*",
+        "https://localhost/*",
+        "http://127.0.0.1/*",
+        "https://127.0.0.1/*",
+        "http://*/*html-report*",
+        "https://*/*html-report*"
+      ],
+      "js": ["blob-capture.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": [
         "file:///*",

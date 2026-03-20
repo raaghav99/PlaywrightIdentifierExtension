@@ -73,6 +73,7 @@ function injectPanel() {
   h.push('<button id="pw-tab-form" class="pw-tab active" data-view="form">Form</button>');
   h.push('<button id="pw-tab-list" class="pw-tab" data-view="list">Saved <span id="pw-saved-badge" class="pw-tab-badge">0</span></button>');
   h.push('<button id="pw-tab-rca" class="pw-tab" data-view="rca">Library</button>');
+  h.push('<button id="pw-tab-dash" class="pw-tab" data-view="dash">Dashboard</button>');
   h.push('</div>');
 
   /* ── Status Bar ── */
@@ -144,6 +145,32 @@ function injectPanel() {
   h.push('<span id="pw-rca-count"></span>');
   h.push('</div>');
   h.push('<div id="pw-rca-container"></div>');
+  h.push('</div>');
+
+  /* ── Dashboard Section ── */
+  h.push('<div id="pw-dash-section" style="display:none; flex-direction:column; flex:1; overflow:hidden">');
+  /* Search bar */
+  h.push('<div id="pw-dash-search-bar">');
+  h.push('<input id="pw-dash-search" placeholder="\uD83D\uDD0D Search tests, SC, error\u2026" autocomplete="off">');
+  h.push('<button id="pw-dash-select-all" title="Select / deselect all visible unlabeled tests">Select All</button>');
+  h.push('</div>');
+  /* Group list */
+  h.push('<div id="pw-group-list"></div>');
+  /* Footer — full RCA form, slides up when tests are selected */
+  h.push('<div id="pw-dash-footer" style="display:none">');
+  h.push('<div class="pw-dash-field-row">');
+  h.push('<input id="pw-dash-label-input"    class="pw-dash-field" placeholder="Label\u2026"    autocomplete="off">');
+  h.push('<input id="pw-dash-category-input" class="pw-dash-field" placeholder="Category\u2026" autocomplete="off">');
+  h.push('</div>');
+  h.push('<div class="pw-dash-field-row">');
+  h.push('<input id="pw-dash-owner-input"    class="pw-dash-field" placeholder="Owner\u2026"    autocomplete="off">');
+  h.push('<input id="pw-dash-jira-input"     class="pw-dash-field" placeholder="Jira ticket\u2026" autocomplete="off">');
+  h.push('</div>');
+  h.push('<div class="pw-dash-field-row">');
+  h.push('<input type="date" id="pw-dash-date-input" class="pw-dash-field pw-dash-date">');
+  h.push('<button id="pw-dash-apply-btn">Apply to 0 selected</button>');
+  h.push('</div>');
+  h.push('</div>');
   h.push('</div>');
 
   /* ── Resize handle ── */
