@@ -232,7 +232,10 @@ if (isPlaywrightReport()) {
       if (!db) { cb([]); return; }
       var req = db.transaction("rca_library", "readonly").objectStore("rca_library").getAll();
       req.onsuccess = function () { cb(req.result || []); };
-      req.onerror   = function () { cb([]); };
+      req.onerror   = function (e) {
+        console.error("pw-ext: rcaGetAll IDB read failed", e.target.error);
+        cb([]);
+      };
     });
   }
 
@@ -278,6 +281,10 @@ if (isPlaywrightReport()) {
      calling rcaSaveAll([]) which would wipe any existing IDB data. */
   function migrateRcaToIndexedDb(cb) {
     chrome.storage.local.get(["pw-rca-idb-v1", "pw_rca_library"], function (data) {
+      if (chrome.runtime.lastError) {
+        console.error("pw-ext: migrateRcaToIndexedDb storage read failed — skipping migration to preserve data", chrome.runtime.lastError.message);
+        if (cb) cb(); return;
+      }
       if (data["pw-rca-idb-v1"] === "1") { if (cb) cb(); return; }
 
       var library = data.pw_rca_library || [];
@@ -318,6 +325,10 @@ if (isPlaywrightReport()) {
    */
   function migrateReportsToIndexedDb(cb) {
     chrome.storage.local.get(["pw-reports-idb-v1", "pw_reports"], function (data) {
+      if (chrome.runtime.lastError) {
+        console.error("pw-ext: migrateReportsToIndexedDb storage read failed — skipping migration to preserve data", chrome.runtime.lastError.message);
+        if (cb) cb(); return;
+      }
       if (data["pw-reports-idb-v1"] === "1") { if (cb) cb(); return; }
 
       var reports = data.pw_reports || {};
@@ -395,7 +406,11 @@ if (isPlaywrightReport()) {
       req.onsuccess = function () {
         cb(req.result || { url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() });
       };
-      req.onerror = function () {
+      req.onerror = function (e) {
+        console.error("pw-ext: getReport IDB read failed", e.target.error);
+        if (typeof showToast === "function") {
+          showToast("\u26a0 Storage read error \u2014 do NOT save entries until page is refreshed.", "error");
+        }
         cb({ url: url, scraped: [], labels: {}, lastAccessed: new Date().toISOString() });
       };
     });
@@ -415,7 +430,10 @@ if (isPlaywrightReport()) {
         (req.result || []).forEach(function (r) { map[r.url] = r; });
         cb(map);
       };
-      req.onerror = function () { cb({}); };
+      req.onerror = function (e) {
+        console.error("pw-ext: getAllReports IDB read failed", e.target.error);
+        cb({});
+      };
     });
   }
 
@@ -493,9 +511,15 @@ if (isPlaywrightReport()) {
           }
           if (cb) cb();
         };
-        tx.onerror = function () { if (cb) cb(); };
+        tx.onerror = function (e) {
+          console.error("pw-ext: purgeOldReports transaction failed", e.target.error);
+          if (cb) cb();
+        };
       };
-      req.onerror = function () { if (cb) cb(); };
+      req.onerror = function (e) {
+        console.error("pw-ext: purgeOldReports read failed", e.target.error);
+        if (cb) cb();
+      };
     });
   }
 
@@ -755,14 +779,29 @@ if (isPlaywrightReport()) {
    *   ok=true,  scraped=5, labeled=0 → "✓ 5 tests scraped"              (green)
    */
   function updateStatusBar(scraped, labeled, ok) {
-    var el = document.getElementById("pw-status-text");
+    var el   = document.getElementById("pw-status-text");
+    var fill = document.getElementById("pw-progress-fill");
     if (!el) return;
     if (!ok && scraped === 0) {
       el.textContent = "\u26a0 No tests scraped \u2014 try manual Scrape";
       el.parentElement.className = "pw-status-warn";
+      if (fill) { fill.style.width = "0%"; fill.parentElement.style.display = "none"; }
     } else {
-      el.textContent = "\u2713 " + scraped + " tests scraped" + (labeled ? " \u00b7 " + labeled + " labeled" : "");
+      var progressText = labeled ? (" \u00b7 " + labeled + "/" + scraped + " labeled") : "";
+      el.textContent = "\u2713 " + scraped + " scraped" + progressText;
       el.parentElement.className = "pw-status-ok";
+      if (fill) {
+        var pct = (scraped > 0 && labeled > 0) ? Math.round((labeled / scraped) * 100) : 0;
+        fill.parentElement.style.display = pct > 0 ? "block" : "none";
+        fill.style.width = pct + "%";
+        fill.style.background = (labeled >= scraped && scraped > 0) ? "#22c55e" : "#3b82f6";
+      }
+      /* Confetti when every scraped test is labeled */
+      if (scraped > 0 && labeled >= scraped) {
+        fireConfetti();
+      } else {
+        state.confettiFired = false;  /* reset so confetti fires again if user re-completes */
+      }
     }
   }
 
@@ -797,6 +836,7 @@ if (isPlaywrightReport()) {
     minimized:         false,
     userClosed:        false,
     formHidden:        false,
+    confettiFired:     false,  /* prevents duplicate confetti within one session */
     editingKey:        null,
     currentTestId:     null,  /* testId of the test currently shown in form; used as storage key */
     lastUrl:           location.href,
@@ -805,6 +845,71 @@ if (isPlaywrightReport()) {
     listenersAttached: false,
     testCache:         {}     /* testId → {sc, name, result} — built from list-view rows on init */
   };
+
+  /**
+   * fireConfetti()
+   * --------------
+   * Launches a full-page canvas confetti animation and a success toast when
+   * all tests have been labeled (RCA complete).
+   * One-shot per session — state.confettiFired guards against duplicate triggers.
+   */
+  function fireConfetti() {
+    if (state.confettiFired) return;
+    state.confettiFired = true;
+
+    var canvas = document.createElement("canvas");
+    canvas.id  = "pw-confetti-canvas";
+    canvas.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2147483647";
+    document.body.appendChild(canvas);
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    var ctx    = canvas.getContext("2d");
+    var colors = ["#f94144","#f3722c","#f8961e","#f9c74f","#90be6d","#43aa8b","#577590","#a855f7","#ec4899"];
+    var pieces = [];
+    for (var i = 0; i < 140; i++) {
+      pieces.push({
+        x:     Math.random() * canvas.width,
+        y:     Math.random() * canvas.height - canvas.height,
+        w:     Math.random() * 10 + 5,
+        h:     Math.random() * 6  + 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        vx:    Math.random() * 4 - 2,
+        vy:    Math.random() * 3 + 2,
+        spin:  (Math.random() - 0.5) * 0.18,
+        angle: Math.random() * Math.PI * 2
+      });
+    }
+    var start    = Date.now();
+    var duration = 4500;
+    function frame() {
+      var elapsed  = Date.now() - start;
+      if (elapsed > duration) {
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        return;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var alpha = Math.max(0, 1 - elapsed / duration);
+      pieces.forEach(function (p) {
+        p.x     += p.vx;
+        p.y     += p.vy;
+        p.vy    += 0.09;   /* gravity */
+        p.angle += p.spin;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    if (typeof showToast === "function") {
+      showToast("\uD83C\uDF89 RCA Done! All tests labeled.", "success");
+    }
+  }
 
   /**
    * scrapeAllTests(cb)
@@ -857,8 +962,16 @@ if (isPlaywrightReport()) {
     buildTestCache();   /* keep in-memory cache in sync with freshly scraped rows */
     getReport(function (report) {
       report.scraped = scraped;
-      saveReport(report, function () {
+      saveReport(report, function (err) {
         state.scraping = false;
+        if (err) {
+          console.error("pw-ext: scrapeAllTests failed to persist", err);
+          if (typeof showToast === "function") {
+            showToast("\u26a0 Scrape data not saved \u2014 storage error. See console.", "error");
+          }
+          if (cb) cb(0);
+          return;
+        }
         if (cb) cb(scraped.length);
       });
     });
@@ -935,32 +1048,28 @@ if (isPlaywrightReport()) {
     /* Migrate RCA library from chrome.storage to IndexedDB (one-time, idempotent).
        Must complete before renderLabelChips/refreshCount so chips don't render
        from an empty IndexedDB while migration is still writing old data. */
+    /* Chain: migrate → purge (prevents purge deleting freshly-migrated reports) → scrape */
     migrateRcaToIndexedDb(function () {
       migrateReportsToIndexedDb(function () {
         refreshCount();       /* form.js */
         renderLabelChips();   /* form.js */
-      });
-    });
-
-    /* Purge old reports first, then read storage — guarantees purge wins */
-    purgeOldReports(function () {
-      /* Only auto-scrape if this report has no saved scraped data */
-      getReport(function (report) {
-        if (report.scraped && report.scraped.length) {
-          /* Existing report: touch lastAccessed, skip scrape */
-          saveReport(report);
-          updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
-          checkCarryover(); /* Feature 1: show carryover banner if prior build labels available */
-        } else {
-          /* New report: scrape */
-          updateStatusBar(0, 0, false);
-          scrapeAllTests(function (count) {
-            getReport(function (r) {
-              updateStatusBar(count, Object.keys(r.labels).length, count > 0);
-              checkCarryover(); /* Feature 1: show carryover banner after scrape */
-            });
+        purgeOldReports(function () {
+          getReport(function (report) {
+            if (report.scraped && report.scraped.length) {
+              saveReport(report);
+              updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+              checkCarryover();
+            } else {
+              updateStatusBar(0, 0, false);
+              scrapeAllTests(function (count) {
+                getReport(function (r) {
+                  updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+                  checkCarryover();
+                });
+              });
+            }
           });
-        }
+        });
       });
     });
   }

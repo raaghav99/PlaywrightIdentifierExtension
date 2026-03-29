@@ -285,8 +285,7 @@ function downloadMultiBannerExcel() {
     return;
   }
 
-  chrome.storage.local.get(["pw_reports"], function (data) {
-    var allReports = data.pw_reports || {};
+  getAllReports(function (allReports) {
 
     /* Collect all reports for same env + buildNumber that have labels */
     var bannerReports = [];

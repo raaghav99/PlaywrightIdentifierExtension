@@ -76,8 +76,9 @@ function injectPanel() {
   h.push('<button id="pw-tab-rca" class="pw-tab" data-view="rca">Library</button>');
   h.push('</div>');
 
-  /* ── Status Bar ── */
+  /* ── Status Bar + Progress Track ── */
   h.push('<div id="pw-status-bar"><span id="pw-status-text">Loading\u2026</span></div>');
+  h.push('<div id="pw-progress-track" style="display:none"><div id="pw-progress-fill"></div></div>');
 
   /* ── Carryover Banner (Feature 1) — hidden until Jenkins prior build detected ── */
   h.push('<div id="pw-carryover-banner" style="display:none">');
@@ -207,6 +208,10 @@ function applyPanelPosition() {
   var handle  = document.getElementById("pw-resize-handle");
   var tab     = document.getElementById("pw-page-toggle");
   var dockBtn = document.getElementById("pw-dock-btn");
+  if (!panel || !handle) {
+    console.error("pw-ext: applyPanelPosition — panel or handle not in DOM");
+    return;
+  }
   panel.style.width = state.width + "px";
   if (state.side === "right") {
     panel.style.right = "0"; panel.style.left = "auto";
@@ -321,6 +326,7 @@ function toggleMinimize() {
  */
 function setupDragResize() {
   var handle = document.getElementById("pw-resize-handle");
+  if (!handle) { console.error("pw-ext: setupDragResize — #pw-resize-handle not in DOM"); return; }
   handle.addEventListener("mousedown", function (e) {
     e.preventDefault();
     var startX = e.clientX;

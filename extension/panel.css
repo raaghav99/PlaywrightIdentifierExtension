@@ -335,6 +335,23 @@
   border-bottom-color: var(--pw-warn-bdr);
 }
 
+/* ---------- Progress Track ---------- */
+#pw-progress-track {
+  height: 3px;
+  background: rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+:is(html.dark, html.pw-dark) #pw-progress-track {
+  background: rgba(255,255,255,0.1);
+}
+#pw-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #3b82f6;
+  transition: width 0.4s ease, background 0.3s ease;
+  border-radius: 0 2px 2px 0;
+}
+
 /* ---------- Form Section ---------- */
 #pw-form-section {
   flex: 1;

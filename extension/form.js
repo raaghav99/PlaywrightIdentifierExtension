@@ -237,23 +237,31 @@ function attachListeners() {
     var suppKey  = banner.dataset.suppressKey;
     var srcUrl   = banner.dataset.sourceUrl;
     var srcBuild = banner.dataset.sourceBuild;
-    chrome.storage.local.get(["pw_reports"], function (data) {
-      var allReports = data.pw_reports || {};
-      var target     = allReports[getReportUrl()];
-      var source     = allReports[srcUrl];
-      if (!target || !source) return;
-      var currentParsed = parseJenkinsUrl(getReportUrl());
-      var recurringIds  = currentParsed
-        ? getRecurringTestIds(currentParsed, allReports)
-        : new Set();
-      var count = importLabelsFromPreviousBuild(source, target, recurringIds);
-      saveReport(target, function () {
-        updateStatusBar(target.scraped.length, Object.keys(target.labels).length, true);
-        renderLabelChips();
-        refreshCount(Object.keys(target.labels).length);
-        showToast(count + " label" + (count === 1 ? "" : "s") + " imported from build " + srcBuild, "success");
-        banner.style.display = "none";
-        try { localStorage.setItem(suppKey, "1"); } catch (e) {}
+    getAllReports(function (allReports) {
+      getReport(function (target) {
+        var source = allReports[srcUrl];
+        if (!source) {
+          showToast("Source build not found in storage", "error");
+          return;
+        }
+        var currentParsed = parseJenkinsUrl(getReportUrl());
+        var recurringIds  = currentParsed
+          ? getRecurringTestIds(currentParsed, allReports)
+          : new Set();
+        var count = importLabelsFromPreviousBuild(source, target, recurringIds);
+        saveReport(target, function (err) {
+          if (err) {
+            showToast("Import failed \u2014 storage error. See console.", "error");
+            return;
+          }
+          var labelCount = Object.keys(target.labels).length;
+          updateStatusBar(target.scraped.length, labelCount, true);
+          renderLabelChips();
+          refreshCount(labelCount);
+          showToast(count + " label" + (count === 1 ? "" : "s") + " imported from build " + srcBuild, "success");
+          banner.style.display = "none";
+          try { localStorage.setItem(suppKey, "1"); } catch (e) {}
+        });
       });
     });
   });
@@ -867,10 +875,14 @@ function deleteCurrentEntry() {
   if (!state.editingKey) return;
   getReport(function (report) {
     delete report.labels[state.editingKey];
-    saveReport(report, function () {
+    saveReport(report, function (err) {
+      if (err) {
+        showToast("Delete failed \u2014 storage error. Entry may reappear on reload.", "error");
+        return;
+      }
+      state.confettiFired = false;
       var labelCount = Object.keys(report.labels).length;
       refreshCount(labelCount);
-      /* BUG-06: keep status bar in sync after per-entry delete */
       updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
       showToast("Entry deleted", "warning");
@@ -916,7 +928,12 @@ function deleteAllEntries() {
   if (!confirm("Delete all labeled entries for this report?\nRCA library will be preserved.")) return;
   getReport(function (report) {
     report.labels = {};
-    saveReport(report, function () {
+    saveReport(report, function (err) {
+      if (err) {
+        showToast("Clear failed \u2014 storage error. Labels may still exist on reload.", "error");
+        return;
+      }
+      state.confettiFired = false;
       refreshCount(0);
       updateStatusBar(report.scraped.length, 0, report.scraped.length > 0);
       showView("form");
@@ -1270,10 +1287,14 @@ function renderList(report) {
 function deleteEntry(key) {
   getReport(function (report) {
     delete report.labels[key];
-    saveReport(report, function () {
+    saveReport(report, function (err) {
+      if (err) {
+        showToast("Delete failed \u2014 storage error. Entry may reappear on reload.", "error");
+        return;
+      }
+      state.confettiFired = false;
       var labelCount = Object.keys(report.labels).length;
       refreshCount(labelCount);
-      /* BUG-06: keep status bar in sync after per-entry delete */
       updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
       renderList(report);
       showToast("Entry deleted", "warning");
@@ -1348,7 +1369,10 @@ function renderLabelChips() {
         e.stopPropagation();
         var id = btn.dataset.id;
         rcaGetAll(function (lib) {
-          rcaSaveAll(lib.filter(function (h) { return h.id !== id; }), renderLabelChips);
+          rcaSaveAll(lib.filter(function (h) { return h.id !== id; }), function (err) {
+            if (err) { showToast("Could not remove chip \u2014 storage error.", "error"); return; }
+            renderLabelChips();
+          });
         });
       });
     });
@@ -1526,7 +1550,8 @@ function renderRcaLibrary() {
         ev.stopPropagation();
         var id = btn.dataset.id;
         rcaGetAll(function (lib) {
-          rcaSaveAll(lib.filter(function (e) { return e.id !== id; }), function () {
+          rcaSaveAll(lib.filter(function (e) { return e.id !== id; }), function (err) {
+            if (err) { showToast("Could not remove RCA entry \u2014 storage error.", "error"); return; }
             renderRcaLibrary();
             renderLabelChips();
             showToast("RCA entry removed", "warning");
@@ -1575,38 +1600,35 @@ function checkCarryover() {
   try { alreadySuppressed = localStorage.getItem(suppKey) || ""; } catch (e) {}
   if (alreadySuppressed === "1") return; /* User already acted on this build */
 
-  chrome.storage.local.get(["pw_reports"], function (data) {
-    var allReports  = data.pw_reports || {};
-    var currentUrl  = getReportUrl();
-    var currentRep  = allReports[currentUrl] || { labels: {} };
+  getAllReports(function (allReports) {
+    getReport(function (currentRep) {
+      /* If this build already has labels — nothing to import */
+      if (Object.keys(currentRep.labels || {}).length > 0) return;
 
-    /* If this build already has labels — nothing to import */
-    if (Object.keys(currentRep.labels || {}).length > 0) return;
+      var found = findPreviousBuildReport(currentParsed, allReports);
+      if (!found) return;
 
-    var found = findPreviousBuildReport(currentParsed, allReports);
-    if (!found) return;
+      /* Count importable labels (keys absent in current report) */
+      var sourceLabels = found.report.labels || {};
+      var targetLabels = currentRep.labels   || {};
+      var importable   = Object.keys(sourceLabels).filter(function (k) {
+        return !targetLabels[k];
+      }).length;
+      if (!importable) return;
 
-    /* Count importable labels (keys absent in current report) */
-    var sourceLabels  = found.report.labels || {};
-    var targetLabels  = currentRep.labels   || {};
-    var importable    = Object.keys(sourceLabels).filter(function (k) {
-      return !targetLabels[k];
-    }).length;
-    if (!importable) return;
+      /* Show the banner */
+      var banner = document.getElementById("pw-carryover-banner");
+      var text   = document.getElementById("pw-carryover-text");
+      if (!banner || !text) return;
 
-    /* Show the banner */
-    var banner = document.getElementById("pw-carryover-banner");
-    var text   = document.getElementById("pw-carryover-text");
-    if (!banner || !text) return;
+      text.textContent = "\u21a9 RCA from " + currentParsed.environment +
+        " / Build " + found.buildNumber + " available (" + importable + " labels)";
 
-    text.textContent = "\u21a9 RCA from " + currentParsed.environment +
-      " / Build " + found.buildNumber + " available (" + importable + " labels)";
+      banner.dataset.suppressKey = suppKey;
+      banner.dataset.sourceUrl   = found.report.url;
+      banner.dataset.sourceBuild = found.buildNumber;
 
-    /* Store context on the banner element so button handlers can read it */
-    banner.dataset.suppressKey = suppKey;
-    banner.dataset.sourceUrl   = found.report.url;
-    banner.dataset.sourceBuild = found.buildNumber;
-
-    banner.style.display = "flex";
+      banner.style.display = "flex";
+    });
   });
 }
