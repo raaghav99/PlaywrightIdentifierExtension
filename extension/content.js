@@ -778,29 +778,30 @@ if (isPlaywrightReport()) {
    *   ok=true,  scraped=98 → "✓ 98 tests scraped · 3 labeled"           (green)
    *   ok=true,  scraped=5, labeled=0 → "✓ 5 tests scraped"              (green)
    */
-  function updateStatusBar(scraped, labeled, ok) {
+  function updateStatusBar(scraped, labeled, ok, failCount) {
     var el   = document.getElementById("pw-status-text");
     var fill = document.getElementById("pw-progress-fill");
     if (!el) return;
+    var total = (typeof failCount === "number") ? failCount : scraped;
     if (!ok && scraped === 0) {
       el.textContent = "\u26a0 No tests scraped \u2014 try manual Scrape";
       el.parentElement.className = "pw-status-warn";
       if (fill) { fill.style.width = "0%"; fill.parentElement.style.display = "none"; }
     } else {
-      var progressText = labeled ? (" \u00b7 " + labeled + "/" + scraped + " labeled") : "";
+      var progressText = (total > 0 && labeled > 0) ? (" \u00b7 " + labeled + "/" + total + " fails labeled") : "";
       el.textContent = "\u2713 " + scraped + " scraped" + progressText;
       el.parentElement.className = "pw-status-ok";
       if (fill) {
-        var pct = (scraped > 0 && labeled > 0) ? Math.round((labeled / scraped) * 100) : 0;
+        var pct = (total > 0 && labeled > 0) ? Math.round((labeled / total) * 100) : 0;
         fill.parentElement.style.display = pct > 0 ? "block" : "none";
-        fill.style.width = pct + "%";
-        fill.style.background = (labeled >= scraped && scraped > 0) ? "#22c55e" : "#3b82f6";
+        fill.style.width = Math.min(pct, 100) + "%";
+        fill.style.background = (labeled >= total && total > 0) ? "#22c55e" : "#3b82f6";
       }
-      /* Confetti when every scraped test is labeled */
-      if (scraped > 0 && labeled >= scraped) {
+      /* Confetti when all failed tests are labeled */
+      if (total > 0 && labeled >= total) {
         fireConfetti();
       } else {
-        state.confettiFired = false;  /* reset so confetti fires again if user re-completes */
+        state.confettiFired = false;
       }
     }
   }
@@ -1057,13 +1058,15 @@ if (isPlaywrightReport()) {
           getReport(function (report) {
             if (report.scraped && report.scraped.length) {
               saveReport(report);
-              updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+              var failCount = report.scraped.filter(function (s) { return s.result === "FAIL"; }).length;
+              updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true, failCount);
               checkCarryover();
             } else {
-              updateStatusBar(0, 0, false);
+              updateStatusBar(0, 0, false, 0);
               scrapeAllTests(function (count) {
                 getReport(function (r) {
-                  updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+                  var fc = r.scraped.filter(function (s) { return s.result === "FAIL"; }).length;
+                  updateStatusBar(count, Object.keys(r.labels).length, count > 0, fc);
                   checkCarryover();
                 });
               });

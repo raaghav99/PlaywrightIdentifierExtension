@@ -255,7 +255,8 @@ function attachListeners() {
             return;
           }
           var labelCount = Object.keys(target.labels).length;
-          updateStatusBar(target.scraped.length, labelCount, true);
+          var failCount  = (target.scraped || []).filter(function (s) { return s.result === "FAIL"; }).length;
+          updateStatusBar(target.scraped.length, labelCount, true, failCount);
           renderLabelChips();
           refreshCount(labelCount);
           showToast(count + " label" + (count === 1 ? "" : "s") + " imported from build " + srcBuild, "success");
@@ -289,7 +290,8 @@ function attachListeners() {
       dlBtn.disabled = false;
       refreshCount();
       getReport(function (r) {
-        updateStatusBar(count, Object.keys(r.labels).length, count > 0);
+        var fc = (r.scraped || []).filter(function (s) { return s.result === "FAIL"; }).length;
+        updateStatusBar(count, Object.keys(r.labels).length, count > 0, fc);
       });
       showToast("Scraped " + count + " row" + (count === 1 ? "" : "s"), "success");
     });
@@ -882,8 +884,9 @@ function deleteCurrentEntry() {
       }
       state.confettiFired = false;
       var labelCount = Object.keys(report.labels).length;
+      var failCount  = (report.scraped || []).filter(function (s) { return s.result === "FAIL"; }).length;
       refreshCount(labelCount);
-      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
+      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0, failCount);
       if (document.getElementById("pw-list-section").style.display !== "none") renderList(report);
       showToast("Entry deleted", "warning");
       state.editingKey = null;
@@ -934,8 +937,9 @@ function deleteAllEntries() {
         return;
       }
       state.confettiFired = false;
+      var failCount = (report.scraped || []).filter(function (s) { return s.result === "FAIL"; }).length;
       refreshCount(0);
-      updateStatusBar(report.scraped.length, 0, report.scraped.length > 0);
+      updateStatusBar(report.scraped.length, 0, report.scraped.length > 0, failCount);
       showView("form");
       showToast("Report labels cleared", "warning");
     });
@@ -1126,7 +1130,10 @@ function saveEntry() {
           saveBtn.textContent = "Update";
           saveBtn.blur();
           document.getElementById("pw-delete-current-btn").style.display = "";
-          if (report.scraped.length > 0) updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true);
+          if (report.scraped.length > 0) {
+            var fc = report.scraped.filter(function (s) { return s.result === "FAIL"; }).length;
+            updateStatusBar(report.scraped.length, Object.keys(report.labels).length, true, fc);
+          }
           showToast(isUpdate ? "Entry updated!" : "Entry saved!", "success");
         });
       });
@@ -1294,8 +1301,9 @@ function deleteEntry(key) {
       }
       state.confettiFired = false;
       var labelCount = Object.keys(report.labels).length;
+      var failCount  = (report.scraped || []).filter(function (s) { return s.result === "FAIL"; }).length;
       refreshCount(labelCount);
-      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0);
+      updateStatusBar(report.scraped.length, labelCount, report.scraped.length > 0, failCount);
       renderList(report);
       showToast("Entry deleted", "warning");
     });
