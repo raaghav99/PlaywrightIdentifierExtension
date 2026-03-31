@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Playwright RCA Helper",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4/CyB5OZeg5dsoF/IODbDw3Mf42n0ALTCVe6bLKg6szL+5BBsWwU5TdAYdbWtPsbGdqPZRKG8eLe5hYu1SLJW5kEuTAsoxxQwO/TwZFYFryaYUstDHzQeoNEs56gQW9cXA6iChhGZe99e47CcKfKf9TIRaS8MhPcxFO6Sd91gbCBXX5t4scEHB58qzdrh4fLtl5hYEWakf5XOrG60t7NXr9kPtG7FDAcvJbAeKFFm9omilc59lxvLc6ELT1gG5tZ51cgZz5wGb5/9kT2hSoYLb1H0Cux5ZBUHHXqbK+uCZIhKQYa7+/4L6glT7iBM/WrespAQ1r2OYoryPBEeI8GPQIDAQAB",
   "description": "Label, analyse and export Playwright test results with RCA tracking directly from the HTML report",
   "icons": {

@@ -565,12 +565,14 @@ if (isPlaywrightReport()) {
     var titleEl = row.querySelector(".test-file-title");
     var rawName = titleEl ? titleEl.textContent.trim() : "";
     rawName = rawName.replace(/\s*\(retry\s*\d+\)\s*/gi, "").trim();
-    // Strip feature-name prefix: playwright-report-extractor.js uses slice(1) after
-    // splitting on › — i.e. drops only the first segment (feature name), keeps the rest.
-    // e.g. "Feature › Scenario › Example #1" → "Scenario › Example #1"
-    // normalizeName() then strips Example #N and converts remaining › to " - ".
+    // Strip feature-name prefix only when there are multiple › segments.
+    // e.g. "Feature › Cart - Print › Example #1" → "Cart - Print › Example #1"
+    // If only one › exists (e.g. "Cart - Print › Example #1"), keep the full string
+    // so normalizeName() can strip the suffix and preserve the describe name.
     var firstArrow = rawName.indexOf("\u203a");
-    if (firstArrow !== -1) rawName = rawName.slice(firstArrow + 1).trim();
+    if (firstArrow !== -1 && rawName.indexOf("\u203a", firstArrow + 1) !== -1) {
+      rawName = rawName.slice(firstArrow + 1).trim();
+    }
     var name = normalizeName(rawName);
 
     var testId = "";
